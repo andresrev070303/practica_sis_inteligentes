@@ -227,3 +227,188 @@ class AgenteHex(Agente):
 
         self.metricas['nodos_expandidos'] = nodos_expandidos
         return None
+    
+    # ─────────────────────────────────────────────────────────────────
+    # Búsqueda Paso a Paso
+    # ─────────────────────────────────────────────────────────────────
+
+    def buscar_paso_a_paso(self, inicio: tuple, meta: tuple, tecnica: str):
+        """Versión paso a paso de la búsqueda."""
+        self._inicio = inicio
+        self._meta = meta
+        self._tecnica = tecnica
+
+        # Resetear estado
+        self.camino = []
+        self.explorados = []
+        self.nivel_bfs = {}
+        self.costo_acumulado = {}
+        self.metricas = {}
+        
+        # Inicializar según técnica
+        if tecnica == 'anchura':
+            return self._bfs_paso_a_paso()
+        elif tecnica == 'profundidad':
+            return self._dfs_paso_a_paso()
+        elif tecnica == 'costouniforme':
+            return self._ucs_paso_a_paso()
+        else:
+            raise ValueError(f"Técnica desconocida: '{tecnica}'")
+
+    def _registrar_exploracion(self, nodo, camino, metricas_parciales):
+        """Registra el estado actual de exploración (código común)."""
+        self.explorados.append(nodo)
+        self._camino_actual = camino
+        self.metricas.update(metricas_parciales)
+
+    def _preparar_resultado_parcial(self, camino_parcial):
+        """Prepara el diccionario de resultado para visualización."""
+        return {
+            'tecnica': self._tecnica,
+            'camino_set': set(camino_parcial) if camino_parcial else set(),
+            'camino_lista': camino_parcial or [],
+            'explorados': list(self.explorados),
+            'nivel_bfs': dict(self.nivel_bfs),
+            'costo_acumulado': dict(self.costo_acumulado),
+            'metricas': dict(self.metricas),
+            'en_progreso': True
+        }
+
+    # ─────────────────────────────────────────────────────────────────
+    # BFS Paso a Paso (OPTIMIZADO)
+    # ─────────────────────────────────────────────────────────────────
+
+    def _bfs_paso_a_paso(self):
+        """BFS paso a paso optimizado."""
+        from collections import deque
+
+        inicio, meta = self._inicio, self._meta
+
+        # Estructuras de búsqueda
+        frontera = deque([[inicio]])
+        visitados = {inicio}
+        self.nivel_bfs[inicio] = 0
+        nodos_expandidos = 0
+        
+        while frontera:
+            # Tomar siguiente camino
+            camino = frontera.popleft()
+            nodo = camino[-1]
+            
+            # Registrar exploración
+            nodos_expandidos += 1
+            self._registrar_exploracion(nodo, camino, 
+                                       {'nodos_expandidos': nodos_expandidos})
+            
+            # Verificar meta
+            if nodo == meta:
+                self.metricas.update({
+                    'pasos': len(camino) - 1,
+                    'costo': len(camino) - 1,
+                })
+                yield 'ENCONTRADO', camino
+                return
+            
+            # Añadir vecinos no visitados
+            for vecino in self.tablero.obtener_vecinos(*nodo):
+                if vecino not in visitados:
+                    visitados.add(vecino)
+                    self.nivel_bfs[vecino] = self.nivel_bfs[nodo] + 1
+                    frontera.append(camino + [vecino])
+            
+            # Ceder control para visualizar
+            yield 'EXPLORANDO', self._preparar_resultado_parcial(camino)
+        
+        yield 'NO_ENCONTRADO', None
+
+    # ─────────────────────────────────────────────────────────────────
+    # DFS Paso a Paso (OPTIMIZADO)
+    # ─────────────────────────────────────────────────────────────────
+
+    def _dfs_paso_a_paso(self):
+        """DFS paso a paso optimizado."""
+        inicio, meta = self._inicio, self._meta
+
+        frontera = [[inicio]]
+        visitados = set()
+        nodos_expandidos = 0
+        
+        while frontera:
+            camino = frontera.pop()
+            nodo = camino[-1]
+            
+            if nodo in visitados:
+                continue
+            
+            # Registrar exploración
+            visitados.add(nodo)
+            nodos_expandidos += 1
+            self._registrar_exploracion(nodo, camino,
+                                       {'nodos_expandidos': nodos_expandidos})
+            
+            if nodo == meta:
+                costo = sum(self._costo_celda(*n) for n in camino[1:])
+                self.metricas.update({
+                    'pasos': len(camino) - 1,
+                    'costo': costo,
+                })
+                yield 'ENCONTRADO', camino
+                return
+            
+            # Añadir vecinos no visitados (en orden inverso)
+            for vecino in reversed(self.tablero.obtener_vecinos(*nodo)):
+                if vecino not in visitados:
+                    frontera.append(camino + [vecino])
+            
+            yield 'EXPLORANDO', self._preparar_resultado_parcial(camino)
+        
+        yield 'NO_ENCONTRADO', None
+
+    # ─────────────────────────────────────────────────────────────────
+    # UCS Paso a Paso (OPTIMIZADO)
+    # ─────────────────────────────────────────────────────────────────
+
+    def _ucs_paso_a_paso(self):
+        """UCS paso a paso optimizado."""
+        import heapq
+        
+        inicio, meta = self._inicio, self._meta
+
+        contador = 0
+        heap = [(0, contador, [inicio])]
+        visitados = {}
+        self.costo_acumulado[inicio] = 0
+        nodos_expandidos = 0
+        
+        while heap:
+            costo, _, camino = heapq.heappop(heap)
+            nodo = camino[-1]
+            
+            if nodo in visitados and visitados[nodo] <= costo:
+                continue
+            
+            # Registrar exploración
+            visitados[nodo] = costo
+            self.costo_acumulado[nodo] = costo
+            nodos_expandidos += 1
+            self._registrar_exploracion(nodo, camino,
+                                       {'nodos_expandidos': nodos_expandidos})
+            
+            if nodo == meta:
+                self.metricas.update({
+                    'pasos': len(camino) - 1,
+                    'costo': costo,
+                })
+                yield 'ENCONTRADO', camino
+                return
+            
+            # Añadir vecinos
+            for vecino in self.tablero.obtener_vecinos(*nodo):
+                nuevo_costo = costo + self._costo_celda(*vecino)
+                if vecino not in visitados or visitados[vecino] > nuevo_costo:
+                    contador += 1
+                    heapq.heappush(heap, (nuevo_costo, contador, camino + [vecino]))
+            
+            yield 'EXPLORANDO', self._preparar_resultado_parcial(camino)
+        
+        yield 'NO_ENCONTRADO', None

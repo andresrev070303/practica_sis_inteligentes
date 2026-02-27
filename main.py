@@ -65,6 +65,13 @@ class Juego:
         # Resultado de la última búsqueda
         self.resultado = None   # dict con tecnica, camino, explorados, etc.
 
+        # Variables para búsqueda paso a paso
+        self.busqueda_activa = False
+        self.generador_busqueda = None
+        self.velocidad_busqueda = 10  # pasos por segundo
+        self.contador_pasos = 0
+        self.ultimo_tiempo = 0
+
         # Instrucciones HUD
         self.instrucciones = [
             "Flechas / +  -  : camara / zoom",
@@ -72,12 +79,60 @@ class Juego:
             "D  : DFS  (exploracion profunda)",
             "U  : Costo Uniforme",
             "C  : limpiar resultado",
+            "ESPACIO : pausa/reanuda busqueda",
+            "R / F : velocidad - / +",
             "Clic izq  :  mover INICIO",
             "Clic der  :  mover META",
             "ESC : salir",
         ]
 
     # ── Coordenadas ───────────────────────────────────────────────────────────
+
+    def _iniciar_busqueda_paso_a_paso(self, tecnica: str):
+        """Inicia una búsqueda que se ejecutará paso a paso."""
+        self.busqueda_activa = True
+        self.generador_busqueda = self.agente.buscar_paso_a_paso(self.inicio, self.meta, tecnica)
+        self.contador_pasos = 0
+        self.ultimo_tiempo = pygame.time.get_ticks()
+        
+        # Limpiar resultado anterior pero mantener visualización
+        self.resultado = None
+        print(f"🔍 Iniciando búsqueda {tecnica} paso a paso...")
+
+    # Avanzar un paso en la búsqueda
+    def _avanzar_busqueda(self):
+        """Ejecuta un paso de la búsqueda y actualiza visualización."""
+        if not self.busqueda_activa or not self.generador_busqueda:
+            return
+        
+        try:
+            resultado_paso = next(self.generador_busqueda)
+            estado = resultado_paso[0]
+            
+            if estado == 'EXPLORANDO':
+                _, resultado_parcial = resultado_paso
+                self.contador_pasos += 1
+                resultado_parcial['paso_actual'] = self.contador_pasos
+                self.resultado = resultado_parcial
+                
+            elif estado == 'ENCONTRADO':
+                _, camino_final = resultado_paso
+                self.busqueda_activa = False
+                self.generador_busqueda = None
+                
+                self.resultado = self.agente._preparar_resultado_parcial(camino_final)
+                self.resultado['en_progreso'] = False
+                self.resultado['camino_set'] = set(camino_final)
+                print(f"✅ Búsqueda completada en {self.contador_pasos} pasos")
+                
+            elif estado == 'NO_ENCONTRADO':
+                self.busqueda_activa = False
+                self.generador_busqueda = None
+                print("❌ No se encontró camino")
+                
+        except StopIteration:
+            self.busqueda_activa = False
+            self.generador_busqueda = None
 
     def hex_a_pantalla(self, q, r):
         """Axial (q,r) → píxeles (x,y). Flat-top."""
@@ -266,7 +321,7 @@ class Juego:
 
             elif evento.type == pygame.KEYDOWN:
                 k = evento.key
-                if   k == pygame.K_ESCAPE:
+                if k == pygame.K_ESCAPE:
                     return False
                 elif k == pygame.K_LEFT:
                     self.offset_x += 50
@@ -281,24 +336,40 @@ class Juego:
                 elif k in (pygame.K_MINUS, pygame.K_KP_MINUS):
                     self.zoom = max(0.3, self.zoom / 1.2)
                 elif k == pygame.K_b:
-                    self._ejecutar_busqueda('anchura')
+                    self._iniciar_busqueda_paso_a_paso('anchura')
                 elif k == pygame.K_d:
-                    self._ejecutar_busqueda('profundidad')
+                    self._iniciar_busqueda_paso_a_paso('profundidad')
                 elif k == pygame.K_u:
-                    self._ejecutar_busqueda('costouniforme')
+                    self._iniciar_busqueda_paso_a_paso('costouniforme')
                 elif k == pygame.K_c:
                     self.resultado = None
+                    self.busqueda_activa = False
+                    self.generador_busqueda = None
                     print("🧹 Visualización limpiada")
+                elif k == pygame.K_SPACE:
+                    self.busqueda_activa = not self.busqueda_activa
+                    estado = "REANUDADA" if self.busqueda_activa else "PAUSADA"
+                    print(f"⏸️ Búsqueda {estado}")
+                elif k == pygame.K_r:
+                    self.velocidad_busqueda = max(1, self.velocidad_busqueda - 2)
+                    print(f"🐢 Velocidad: {self.velocidad_busqueda} pasos/s")
+                elif k == pygame.K_f:
+                    self.velocidad_busqueda = min(30, self.velocidad_busqueda + 2)
+                    print(f"🐇 Velocidad: {self.velocidad_busqueda} pasos/s")
 
             elif evento.type == pygame.MOUSEBUTTONDOWN:
+                if self.busqueda_activa:
+                    print("⏸️ Búsqueda pausada para mover posición")
+                    self.busqueda_activa = False
+                
                 q, r = self.pantalla_a_hex(*evento.pos)
                 if (q, r) in self.tablero.celdas:
                     if evento.button == 1:
-                        self.inicio   = (q, r)
+                        self.inicio = (q, r)
                         self.resultado = None
                         print(f"🟢 INICIO → {self.inicio}")
                     elif evento.button == 3:
-                        self.meta     = (q, r)
+                        self.meta = (q, r)
                         self.resultado = None
                         print(f"🔴 META   → {self.meta}")
 
@@ -309,16 +380,60 @@ class Juego:
     def ejecutar(self):
         ejecutando = True
         while ejecutando:
+            tiempo_actual = pygame.time.get_ticks()
+            
+            # Control de velocidad de búsqueda
+            if self.busqueda_activa and self.generador_busqueda:
+                paso_ms = 1000 // self.velocidad_busqueda
+                if tiempo_actual - self.ultimo_tiempo >= paso_ms:
+                    self._avanzar_busqueda()
+                    self.ultimo_tiempo = tiempo_actual
+            
             ejecutando = self.manejar_eventos()
             self.pantalla.fill(COLOR_FONDO)
             self.dibujar_tablero()
             self._dibujar_camino_lineas()
+            self._dibujar_hud_paso_a_paso()  # Nueva función
             self._dibujar_hud()
             pygame.display.flip()
             self.reloj.tick(60)
+        
         pygame.quit()
         sys.exit()
 
+    def _dibujar_hud_paso_a_paso(self):
+        """Muestra información de la búsqueda en progreso."""
+        if self.busqueda_activa or (self.resultado and self.resultado.get('en_progreso')):
+            # Barra de progreso
+            y_base = 80
+            ancho_barra = 300
+            alto_barra = 20
+            x_barra = 10
+            
+            # Fondo de la barra
+            pygame.draw.rect(self.pantalla, (50, 50, 50), (x_barra, y_base, ancho_barra, alto_barra))
+            
+            # Progreso (aproximado)
+            if hasattr(self.agente, 'explorados'):
+                total_celdas = len(self.tablero.celdas)
+                progreso = min(1.0, len(self.agente.explorados) / total_celdas)
+                ancho_progreso = int(ancho_barra * progreso)
+                pygame.draw.rect(self.pantalla, (0, 200, 0), (x_barra, y_base, ancho_progreso, alto_barra))
+            
+            # Texto de estado
+            estado = "▶️ EN PROGRESO" if self.busqueda_activa else "⏸️ PAUSADA"
+            if self.resultado and self.resultado.get('en_progreso'):
+                texto = f"{estado} - Paso {self.contador_pasos}"
+            else:
+                texto = f"{estado}"
+            
+            sf = self.fuente_sm.render(texto, True, (255, 255, 100))
+            self.pantalla.blit(sf, (x_barra, y_base - 20))
+            
+            # Velocidad
+            vel_texto = f"Vel: {self.velocidad_busqueda} pasos/s (R/F)"
+            sf_vel = self.fuente_sm.render(vel_texto, True, (180, 180, 180))
+            self.pantalla.blit(sf_vel, (x_barra + ancho_barra + 20, y_base))
 
 if __name__ == "__main__":
     juego = Juego()
