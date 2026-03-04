@@ -5,6 +5,7 @@ import math
 from config import ANCHO, ALTO, COLOR_FONDO, RADIO_HEX
 from ProyectoViajero.tablero_hex import TableroHexagonal
 from AgenteIA.AgenteHex import AgenteHex
+from ProyectoViajero.ControlVoz import ControlVoz
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +59,9 @@ class Juego:
         # Agente buscador
         self.agente = AgenteHex(self.tablero)
 
+        # Control de voz
+        self.voz = ControlVoz()
+
         # Posiciones inicio/meta (coordenadas axiales)
         self.inicio = (0,  0)
         self.meta   = (3, -3)
@@ -84,6 +88,7 @@ class Juego:
             "Clic izq  :  mover INICIO",
             "Clic der  :  mover META",
             "ESC : salir",
+            "V  : activar control por voz",
         ]
 
     # ── Coordenadas ───────────────────────────────────────────────────────────
@@ -341,6 +346,8 @@ class Juego:
                     self._iniciar_busqueda_paso_a_paso('profundidad')
                 elif k == pygame.K_u:
                     self._iniciar_busqueda_paso_a_paso('costouniforme')
+                elif k == pygame.K_v:
+                    self.activar_voz()
                 elif k == pygame.K_c:
                     self.resultado = None
                     self.busqueda_activa = False
@@ -434,6 +441,49 @@ class Juego:
             vel_texto = f"Vel: {self.velocidad_busqueda} pasos/s (R/F)"
             sf_vel = self.fuente_sm.render(vel_texto, True, (180, 180, 180))
             self.pantalla.blit(sf_vel, (x_barra + ancho_barra + 20, y_base))
+
+    def activar_voz(self):
+        """Activa interacción por voz sin interferencia TTS-STT."""
+        print("🎤 Activando control por voz...")
+
+        # Pausar búsqueda si estaba activa
+        if self.busqueda_activa:
+            self.busqueda_activa = False
+
+        # Habla y espera a que termine
+        self.voz.hablar_y_esperar("Hola. ¿Cómo te sientes hoy?")
+
+        # Ahora sí escucha
+        texto = self.voz.escuchar()
+
+        if not texto:
+            self.voz.hablar("No pude escucharte bien. Intenta nuevamente.")
+            return
+
+        emocion = self.voz.detectar_emocion(texto)
+
+        if emocion == "tristeza":
+            self.voz.hablar("Vamos a buscar la zona de juego para ayudarte.")
+            self._iniciar_busqueda_paso_a_paso('anchura')
+
+        elif emocion == "miedo":
+            self.voz.hablar("Busquemos un lugar tranquilo.")
+            self._iniciar_busqueda_paso_a_paso('costouniforme')
+
+        elif emocion == "enojo":
+            self.voz.hablar("Te ayudaré a encontrar un abrazo.")
+            self._iniciar_busqueda_paso_a_paso('profundidad')
+
+        elif emocion == "alegria":
+            self.voz.hablar("¡Qué bueno! Vamos a explorar.")
+            self._iniciar_busqueda_paso_a_paso('anchura')
+
+        elif emocion == "ansiedad":
+            self.voz.hablar("Respiremos y busquemos un camino tranquilo.")
+            self._iniciar_busqueda_paso_a_paso('costouniforme')
+
+        else:
+            self.voz.hablar("No entendí bien la emoción. ¿Puedes repetirlo?")
 
 if __name__ == "__main__":
     juego = Juego()
