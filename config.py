@@ -21,3 +21,11 @@ DIRECCIONES_HEX = [
     (1, 0), (1, -1), (0, -1),
     (-1, 0), (-1, 1), (0, 1)
 ]
+
+# Configuración de niveles
+MOSTRAR_TUTORIAL = True
+ENERGIA_POR_DEFECTO = 20
+
+# Colores para tipos de nivel
+COLOR_INTRO = (100, 100, 255)  # Azul claro para intro
+COLOR_NORMAL = (50, 50, 80) 

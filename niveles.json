@@ -1,0 +1,114 @@
+{
+  "niveles": [
+    {
+      "id": 0,
+      "nombre": "Academia de Naves",
+      "descripcion": "Aprende cómo exploran las naves",
+      "tipo": "introductorio",
+      "radio_tablero": 4,
+      "energia_inicial": 999,
+      "bateria_infinita": true,
+      "inicio": [0, 0],
+      "meta": [3, -3],
+      "costos": "uniformes",
+      "demostraciones": [
+        {
+          "algoritmo": "anchura",
+          "nombre_amigable": "Nave Exploradora",
+          "descripcion": "Exploro primero todo lo que está cerca",
+          "color": "#00AAFF"
+        },
+        {
+          "algoritmo": "profundidad",
+          "nombre_amigable": "Nave Aventurera", 
+          "descripcion": "Sigo un camino hasta el final",
+          "color": "#FFAA00"
+        },
+        {
+          "algoritmo": "costouniforme",
+          "nombre_amigable": "Nave Estratega",
+          "descripcion": "Pienso antes de moverme",
+          "color": "#FF5500"
+        }
+      ],
+      "mensajes": {
+        "inicio": "¡Bienvenido a la Academia de Naves! Aquí la batería es infinita. Prueba todas las naves.",
+        "victoria": "¡Excelente! Has completado el tutorial.",
+        "despues_demo": "¿Qué nave quieres usar?",
+        "fin": "¡Bien! Ahora entiendes cómo exploramos."
+      }
+    },
+    {
+      "id": 1,
+      "nombre": "Primeros Pasos",
+      "descripcion": "Llega al planeta con 15 de batería",
+      "tipo": "normal",
+      "radio_tablero": 4,
+      "energia_inicial": 15,
+      "bateria_infinita": false,
+      "inicio": [0, 0],
+      "meta": [3, -3],
+      "costos": "uniformes",
+      "obstaculos": [],
+      "mensajes": {
+        "inicio": "Nivel 1: Tienes 15 de batería. ¡Cada paso gasta 1!",
+        "victoria": "¡Excelente! Llegaste al planeta.",
+        "derrota": "¡Oh no! Te quedaste sin batería. Intenta con otra nave."
+      }
+    },
+    {
+      "id": 2,
+      "nombre": "Camino más corto",
+      "descripcion": "Encuentra el camino que menos batería gaste",
+      "tipo": "normal",
+      "radio_tablero": 4,
+      "energia_inicial": 12,
+      "bateria_infinita": false,
+      "inicio": [0, 0],
+      "meta": [-2, 2],
+      "costos": "uniformes",
+      "obstaculos": [],
+      "mensajes": {
+        "inicio": "Nivel 2: Tienes 12 de batería. Elige la nave que menos gaste.",
+        "victoria": "¡Bien! Ahorraste batería.",
+        "derrota": "Gastaste demasiada batería. Prueba BFS para el camino más corto."
+      }
+    },
+    {
+      "id": 3,
+      "nombre": "Terreno Variado",
+      "descripcion": "Celdas con diferente costo",
+      "tipo": "normal",
+      "radio_tablero": 4,
+      "energia_inicial": 18,
+      "bateria_infinita": false,
+      "inicio": [0, 0],
+      "meta": [2, 2],
+      "costos": "variables",
+      "obstaculos": [],
+      "mensajes": {
+        "inicio": "Nivel 3: Hay celdas que gastan más batería. ¡Elige bien!",
+        "victoria": "¡Genial! Supiste evitar terrenos difíciles.",
+        "derrota": "Te metiste en terreno complicado. Prueba UCS para minimizar costo."
+      }
+    },
+    {
+      "id": 4,
+      "nombre": "Desafío Final",
+      "descripcion": "Combina todo lo aprendido",
+      "tipo": "normal",
+      "radio_tablero": 5,
+      "energia_inicial": 20,
+      "bateria_infinita": false,
+      "inicio": [0, 0],
+      "meta": [4, -2],
+      "costos": "variables",
+      "obstaculos": ["miedo", "tormenta"],
+      "mensajes": {
+        "inicio": "Nivel 4: ¡El gran desafío! Elige sabiamente.",
+        "victoria": "¡Felicidades! Completaste todos los niveles.",
+        "derrota": "Casi lo logras. ¡Inténtalo de nuevo!"
+      }
+    }
+  ]
+}
