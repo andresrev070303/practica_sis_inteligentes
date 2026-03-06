@@ -84,9 +84,9 @@ class Juego:
 
         self.reloj = pygame.time.Clock()
 
-        # Cámara - centrada
+        # Cámara - centrada (ajustada hacia arriba para dejar espacio al panel inferior)
         self.offset_x = ANCHO // 2
-        self.offset_y = ALTO // 2
+        self.offset_y = (ALTO // 2) - 50
         self.zoom     = 1.0
 
         # Fuentes (Intentar usar Segoe UI Emoji para soporte de emojis en Windows)
@@ -747,21 +747,24 @@ class Juego:
                     else:
                         pygame.draw.circle(self.pantalla, color_planeta, (x, y), r_img)
                     # Borde eliminado (transparente)
+
                 else:
-                    # Planeta normal
+                    # Planeta no seleccionado (grisáceo o tenue)
                     img = self.imgs_planetas.get(celda.planeta)
+                    # r_img recalculado para no depender de variables del if anterior
                     r_img = (img.get_width() // 2) if img else int(RADIO_HEX * self.zoom * 0.77)
+
                     if img:
-                        self.pantalla.blit(img, (x - r_img, y - r_img))
+                        # Dibujar imagen con transparencia si no es el objetivo
+                        img_alpha = img.copy()
+                        img_alpha.set_alpha(150) # Semi-transparente
+                        self.pantalla.blit(img_alpha, (x - r_img, y - r_img))
                     else:
                         color_planeta = COLOR_EMOCIONES.get(celda.planeta, (255, 255, 255))
                         pygame.draw.circle(self.pantalla, color_planeta, (x, y), r_img)
-                    # Borde eliminado (transparente)
+                    
+                    # NO DIBUJAR NOMBRE para planetas no seleccionados
 
-                # Nombre del planeta debajo
-                nombre = PLANETAS[celda.planeta]
-                sf = self.fuente_sm.render(nombre, True, (255, 255, 255))
-                self.pantalla.blit(sf, (x - sf.get_width() // 2, y + r_img + 3))
             
             # Si tiene obstáculo, dibujar símbolo pro
             elif celda.obstaculo:
@@ -915,15 +918,22 @@ class Juego:
         nivel = self.gestor_niveles.obtener_nivel()
         
         # --- Panel Superior Izquierdo: Misión y Estado ---
-        w_panel, h_panel = 320, 110
+        w_panel, h_panel = 360, 110 
         x_panel, y_panel = 20, 20
         self._dibujar_panel_glass(x_panel, y_panel, w_panel, h_panel, color_borde=(0, 255, 255))
         
         # Nivel Título
         texto_nivel = f"🌟 NIVEL {nivel['id'] + 1}: {nivel['nombre'].upper()}"
-        sf_nivel = self.fuente_md.render(texto_nivel, True, (0, 255, 255)) # Cyan neon
+        
+        # Usar fuente escalada si el texto es muy largo
+        fuente_usar = self.fuente_md
+        if len(texto_nivel) > 23: 
+             fuente_usar = self.fuente_sm # Usar fuente pequeña si es muy largo
+
+        sf_nivel = fuente_usar.render(texto_nivel, True, (0, 255, 255)) # Cyan neon
         # Sombra texto
-        sf_sombra = self.fuente_md.render(texto_nivel, True, (0, 0, 0))
+        sf_sombra = fuente_usar.render(texto_nivel, True, (0, 0, 0))
+        
         self.pantalla.blit(sf_sombra, (x_panel + 17, y_panel + 17))
         self.pantalla.blit(sf_nivel, (x_panel + 15, y_panel + 15))
 
@@ -949,18 +959,18 @@ class Juego:
         
         # --- Botón Siguiente Nivel ---
         if self.estado == "COMPLETADO" and nivel['id'] < len(self.gestor_niveles.niveles) - 1:
-            rect_sig = pygame.Rect(ANCHO - 220, 80, 200, 50)
+            # MOVIDO: A la derecha, debajo del panel de estadísticas
+            # Aumentado el ancho a 320 para encajar con el resto
+            # x = ANCHO - 320 - 20 = ANCHO - 340
+            rect_sig = pygame.Rect(ANCHO - 340, 270, 320, 50)
             self.boton_siguiente_rect = rect_sig
-            
-            # Animación pulso simple
-            t = pygame.time.get_ticks()
-            color_borde = (255, 255, 255) if (t // 500) % 2 == 0 else (0, 255, 0)
             
             self._dibujar_boton_pro(rect_sig, "➡️ SIGUIENTE GALAXIA", (0, 180, 0), hover=True)
 
     def _dibujar_bateria(self):
         """Dibuja el indicador de batería estilo barra de energía"""
-        w, h = 260, 50
+        # AUMENTADO: Ancho a 320 para mayor holgura
+        w, h = 320, 50
         x, y = ANCHO - w - 20, 20
         
         self._dibujar_panel_glass(x, y, w, h, color_borde=(255, 255, 0))
@@ -997,50 +1007,52 @@ class Juego:
 
     def _dibujar_hud_inferior(self):
         """Panel inferior de control de naves"""
-        h_panel = 100
+        h_panel = 110
         y_base = ALTO - h_panel
         
         # Dibujar fondo panel completo en la parte inferior
         sup = pygame.Surface((ANCHO, h_panel), pygame.SRCALPHA)
-        sup.fill((10, 15, 30, 220)) # Azul muy oscuro semitransparente
+        sup.fill((10, 15, 30, 240)) # Azul muy oscuro casi opaco
         self.pantalla.blit(sup, (0, y_base))
-        pygame.draw.line(self.pantalla, (0, 255, 255), (0, y_base), (ANCHO, y_base), 2)
+        
+        # Líneas decorativas neón
+        pygame.draw.line(self.pantalla, (0, 255, 255), (0, y_base), (ANCHO, y_base), 2) # Superior
+        pygame.draw.line(self.pantalla, (0, 100, 180), (0, ALTO-2), (ANCHO, ALTO-2), 1) # Inferior
         
         x_centro = ANCHO // 2
         
-        titulo = self.fuente_md.render("🎮 CENTRO DE MANDO: ELIGE TU NAVE 🎮", True, (100, 200, 255))
-        self.pantalla.blit(titulo, (x_centro - titulo.get_width() // 2, y_base + 10))
+        # Título centrado
+        titulo = self.fuente_md.render("🎮  CENTRO DE MANDO: SELECCIONA TU NAVE  🎮", True, (150, 230, 255))
+        self.pantalla.blit(titulo, (x_centro - titulo.get_width() // 2, y_base + 12))
         
-        # Dibujar botones de las naves
-        # Espaciado
-        inicio_x = x_centro - 250
-        gap = 180
+        # Distribución amplia usando PROPORCIONES de pantalla (20%, 50%, 80%)
+        # Esto separa las opciones y aprovecha el ancho completo
+        centros_x = [int(ANCHO * 0.20), int(ANCHO * 0.50), int(ANCHO * 0.80)]
         
         for i, (tecla, sigla, nombre, color) in enumerate(self.opciones_busqueda):
-            cx = inicio_x + i * gap
-            cy = y_base + 60
+            # Posición base de cada grupo
+            cx = centros_x[i]
+            cy = y_base + 65
             
-            # Si esta búsqueda está activa, resaltar
-            resaltado = False
-            texto_nave = nombre
-            if self.resultado and hasattr(self, 'tecnica_actual') and self.tecnica_actual == ['anchura','profundidad','costouniforme'][i]: # simplificado
-                 pass # Logic could be improved but keeping visual focus
-
-            # Dibujar icono de nave (círculo)
-            pygame.draw.circle(self.pantalla, color, (cx, cy), 20)
-            pygame.draw.circle(self.pantalla, (255, 255, 255), (cx, cy), 22, 2)
+            # --- 1. Icono Circular con Tecla ---
+            radio = 24
+            # Círculo relleno color nave
+            pygame.draw.circle(self.pantalla, color, (cx - 70, cy), radio)
+            # Anillo blanco
+            pygame.draw.circle(self.pantalla, (255, 255, 255), (cx - 70, cy), radio + 2, 2)
             
-            # Tecla
+            # Tecla (Negra para contraste)
             sf_k = self.fuente_md.render(tecla, True, (0, 0, 0))
-            self.pantalla.blit(sf_k, (cx - sf_k.get_width()//2, cy - sf_k.get_height()//2))
+            self.pantalla.blit(sf_k, (cx - 70 - sf_k.get_width()//2, cy - sf_k.get_height()//2))
             
-            # Nombre nave
-            sf_nom = self.fuente_sm.render(nombre, True, color)
-            self.pantalla.blit(sf_nom, (cx + 30, cy - 10))
+            # --- 2. Información Texto (A la derecha del icono) ---
+            # Nombre Nave
+            sf_nom = self.fuente_md.render(nombre, True, color)
+            self.pantalla.blit(sf_nom, (cx - 35, cy - 20))
             
-            # Nombre Algoritmo
-            sf_algo = self.fuente_sm.render(f"({sigla})", True, (150, 150, 150))
-            self.pantalla.blit(sf_algo, (cx + 30, cy + 5))
+            # Nombre Algoritmo (gris claro)
+            sf_algo = self.fuente_sm.render(f"Motor: {sigla}", True, (200, 200, 200))
+            self.pantalla.blit(sf_algo, (cx - 35, cy + 5))
 
     def _dibujar_boton_elegir(self):
         """Botón gigante y brillante para confirmar"""
@@ -1069,7 +1081,8 @@ class Juego:
         if not self.estadisticas_elegidas:
             return
         
-        w, h = 280, 160
+        # AUMENTADO: Ancho a 320 para que quepa todo el texto bien
+        w, h = 320, 160
         x, y = ANCHO - w - 20, 90
         
         self._dibujar_panel_glass(x, y, w, h, color_borde=(0, 255, 100))
@@ -1095,7 +1108,8 @@ class Juego:
             sf_l = self.fuente_sm.render(label, True, (150, 150, 150))
             sf_v = self.fuente_sm.render(val, True, col)
             self.pantalla.blit(sf_l, (x + 20, y + dy))
-            self.pantalla.blit(sf_v, (x + 130, y + dy))
+            # Ajustado un poco más a la derecha para dar aire al label
+            self.pantalla.blit(sf_v, (x + 140, y + dy))
             dy += 22
 
     def mostrar_mensaje(self, texto, color):
@@ -1106,7 +1120,8 @@ class Juego:
 
     def _dibujar_mensaje(self):
         """Dibuja mensaje temporal"""
-        if not self.mensaje_estado or pygame.time.get_ticks() - self.tiempo_mensaje > 3000:
+        # Duración reducida de 3000ms a 2000ms
+        if not self.mensaje_estado or pygame.time.get_ticks() - self.tiempo_mensaje > 2000:
             return
         
         x_centro = ANCHO // 2

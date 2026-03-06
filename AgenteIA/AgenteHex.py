@@ -49,7 +49,7 @@ class AgenteHex(Agente):
     # API pública
     # ─────────────────────────────────────────────────────────────────
 
-    def buscar(self, inicio: tuple, meta: tuple, tecnica: str) -> list[tuple]:
+    def buscar(self, inicio: tuple, meta: tuple, tecnica: str, emocion_destino: str = None) -> list[tuple]:
         """
         Ejecuta la búsqueda y devuelve el camino encontrado (o [] si no hay).
         También llena self.explorados, self.nivel_bfs / self.costo_acumulado
@@ -58,6 +58,7 @@ class AgenteHex(Agente):
         self._inicio = inicio
         self._meta   = meta
         self._tecnica = tecnica
+        self._meta_emocion = emocion_destino  # ¡IMPORTANTE! Guardar la emoción destino
 
         # Reset
         self.camino = []
@@ -114,6 +115,10 @@ class AgenteHex(Agente):
         - Obstáculos (asteroides, tormentas, agujeros negros)
         - Otros planetas (que no sean el destino)
         """
+        # IMPORTANTE: Si es el destino (meta), SIEMPRE es transitable
+        if (q, r) == self._meta:
+            return True
+            
         return self.tablero.es_transitable(q, r, self._meta_emocion)
 
     def _obtener_vecinos_validos(self, q: int, r: int) -> list[tuple[int, int]]:
