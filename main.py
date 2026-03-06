@@ -89,10 +89,16 @@ class Juego:
         self.offset_y = ALTO // 2
         self.zoom     = 1.0
 
-        # Fuentes
-        self.fuente_sm = pygame.font.Font(None, 20)
-        self.fuente_md = pygame.font.Font(None, 26)
-        self.fuente_grande = pygame.font.Font(None, 36)
+        # Fuentes (Intentar usar Segoe UI Emoji para soporte de emojis en Windows)
+        try:
+            self.fuente_sm = pygame.font.SysFont("segoeuiemoji", 20)
+            self.fuente_md = pygame.font.SysFont("segoeuiemoji", 26)
+            self.fuente_grande = pygame.font.SysFont("segoeuiemoji", 36)
+        except:
+             # Fallback
+            self.fuente_sm = pygame.font.Font(None, 20)
+            self.fuente_md = pygame.font.Font(None, 26)
+            self.fuente_grande = pygame.font.Font(None, 36)
 
         # Fondo espacial (generado una sola vez)
         self._init_fondo_espacial()
@@ -215,19 +221,19 @@ class Juego:
         sub = self.fuente_sm.render("(Selecciona una misión para tu astronauta)", True, (200, 240, 255))
         self.pantalla.blit(sub, (x_centro - sub.get_width() // 2, y_base + 30))
         
-        # Botones de emociones (Grid 2 columnas tal vez? No, lista vertical mejorada)
+        # Botones de emociones
         self.botones_menu = []
         emociones = [
-            ("tristeza", "Tristeza", (50, 50, 200)),   # Azul oscuro
-            ("miedo", "Miedo", (100, 0, 150)),      # Morado
-            ("enojo", "Enojo", (200, 50, 50)),      # Rojo
-            ("alegria", "Alegría", (220, 220, 0)),    # Amarillo
-            ("ansiedad", "Ansiedad", (0, 150, 100))   # Verde azulado
+            ("tristeza", "Tristeza", (50, 50, 200), "💧"),   # Azul oscuro
+            ("miedo", "Miedo", (100, 0, 150), "👻"),      # Morado
+            ("enojo", "Enojo", (200, 50, 50), "🔥"),      # Rojo
+            ("alegria", "Alegría", (220, 220, 0), "☀️"),    # Amarillo
+            ("ansiedad", "Ansiedad", (0, 150, 100), "🌀")   # Verde azulado
         ]
         
-        for i, (key, nombre, color_base) in enumerate(emociones):
+        for i, (key, nombre, color_base, emoji) in enumerate(emociones):
             y_boton = y_base + 70 + i * 60 # Más espacio
-            ancho_boton = 400
+            ancho_boton = 480
             rect = pygame.Rect(x_centro - ancho_boton // 2, y_boton, ancho_boton, 45)
             
             # Chequear hover
@@ -237,17 +243,23 @@ class Juego:
             # Dibujar botón pro
             self._dibujar_boton_pro(rect, "", color_base, hover=hover)
             
-            # Icono emoción (círculo de color)
-            pygame.draw.circle(self.pantalla, (255, 255, 255), (rect.left + 30, rect.centery), 15)
-            pygame.draw.circle(self.pantalla, color_base, (rect.left + 30, rect.centery), 12)
+            # --- SOLO EMOJIS Y TEXTO ---
+            # Intentar renderizar emoji grande
+            try:
+                # Usar la fuente grande para el emoji si es posible, o la misma
+                sf_emoji = self.fuente_grande.render(emoji, True, (255, 255, 255))
+                self.pantalla.blit(sf_emoji, (rect.left + 20, rect.centery - sf_emoji.get_height()//2))
+                offset_x = 20 + sf_emoji.get_width() + 10
+            except:
+                offset_x = 20
             
-            # Texto Emoción
-            sf_emo = self.fuente_md.render(f"{nombre}", True, (255, 255, 255))
-            self.pantalla.blit(sf_emo, (rect.left + 60, rect.centery - sf_emo.get_height()//2))
+            # Nombre de la emoción
+            sf_nombre = self.fuente_md.render(nombre, True, (255, 255, 255))
+            self.pantalla.blit(sf_nombre, (rect.left + offset_x, rect.centery - sf_nombre.get_height()//2))
             
             # Texto Planeta destino
             nombre_planeta = PLANETAS[key]
-            sf_dest = self.fuente_sm.render(f"→ Ir a Planeta {nombre_planeta}", True, (230, 230, 230))
+            sf_dest = self.fuente_sm.render(f"→ Planeta {nombre_planeta}", True, (220, 220, 220))
             self.pantalla.blit(sf_dest, (rect.right - sf_dest.get_width() - 20, rect.centery - sf_dest.get_height()//2))
 
             self.botones_menu.append({'rect': rect, 'emocion': key})
