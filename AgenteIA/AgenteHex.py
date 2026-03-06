@@ -95,6 +95,8 @@ class AgenteHex(Agente):
             return self._dfs()
         elif self._tecnica == 'costouniforme':
             return self._ucs()
+        elif self._tecnica == 'a_star':  
+            return self._a_star()
         else:
             raise ValueError(f"Técnica desconocida: '{self._tecnica}'")
 
@@ -182,37 +184,33 @@ class AgenteHex(Agente):
 
     def _dfs(self) -> list | None:
         inicio, meta = self._inicio, self._meta
-
-        frontera   = [[inicio]]   # pila LIFO
-        visitados  = set()
+    
+        # Pila: (camino, visitados_en_camino)
+        # Guardamos los visitados específicos de este camino
+        frontera = [([inicio], {inicio})]
         nodos_expandidos = 0
-
+        
         while frontera:
-            camino = frontera.pop()
-            nodo   = camino[-1]
-
-            if nodo in visitados:
-                continue
-            visitados.add(nodo)
+            camino, visitados_camino = frontera.pop()
+            nodo = camino[-1]
+            
             nodos_expandidos += 1
             self.explorados.append(nodo)
-
+            
             if nodo == meta:
                 costo = sum(self._costo_celda(*n) for n in camino[1:])
                 self.metricas.update({
-                    'pasos'            : len(camino) - 1,
-                    'costo'            : costo,
-                    'nodos_expandidos' : nodos_expandidos,
+                    'pasos': len(camino) - 1,
+                    'costo': costo,
+                    'nodos_expandidos': nodos_expandidos,
                 })
                 return camino
-
-            # SOLO vecinos transitables (en orden inverso)
-            vecinos_validos = self._obtener_vecinos_validos(*nodo)
-            for vecino in reversed(vecinos_validos):
-                if vecino not in visitados:
-                    frontera.append(camino + [vecino])
-
-        self.metricas['nodos_expandidos'] = nodos_expandidos
+            
+            for vecino in reversed(self._obtener_vecinos_validos(*nodo)):
+                if vecino not in visitados_camino:  # Solo evitar ciclos en este camino
+                    nuevo_visitados = visitados_camino | {vecino}
+                    frontera.append((camino + [vecino], nuevo_visitados))
+        
         return None
 
     # ─────────────────────────────────────────────────────────────────
@@ -262,6 +260,94 @@ class AgenteHex(Agente):
         return None
     
     # ─────────────────────────────────────────────────────────────────
+    # A* (A-Star) - Búsqueda Informada
+    # Complejidad: O((V + E) log V)
+    # Usa heurística (distancia hexagonal) para guiar la búsqueda
+    # Garantiza el camino de menor costo SI la heurística es admisible
+    # ─────────────────────────────────────────────────────────────────
+
+    def _a_star(self) -> list | None:
+        """
+        Implementación de A* (A-Star) para búsqueda informada.
+        Usa f(n) = g(n) + h(n) donde:
+        - g(n) = costo real desde inicio hasta n
+        - h(n) = heurística (distancia hexagonal a la meta)
+        """
+        inicio, meta = self._inicio, self._meta
+    
+        contador = 0
+        # g_score: mejor costo conocido desde inicio hasta cada nodo
+        g_score = {inicio: 0}
+        # f_score = g_score + heuristica
+        f_score = {inicio: self._heuristica(*inicio)}
+        
+        # heap: (f_score, contador, g_score, camino)
+        heap = [(f_score[inicio], contador, g_score[inicio], [inicio])]
+        
+        # Diccionario para reconstrucción de camino
+        came_from = {}
+        
+        # Conjunto de nodos ya procesados (expandidos)
+        closed_set = set()
+        
+        nodos_expandidos = 0
+        self.costo_acumulado[inicio] = 0
+        
+        while heap:
+            f_actual, _, g_actual, camino = heapq.heappop(heap)
+            nodo = camino[-1]
+            
+            # Si ya procesamos este nodo con mejor costo, saltar
+            if nodo in closed_set:
+                # Verificar si esta entrada es mejor que la que ya procesamos
+                if g_actual > g_score.get(nodo, float('inf')):
+                    continue
+            
+            # Marcar como procesado
+            closed_set.add(nodo)
+            nodos_expandidos += 1
+            self.explorados.append(nodo)
+            self.costo_acumulado[nodo] = g_actual
+            
+            # Verificar meta
+            if nodo == meta:
+                # Reconstruir camino
+                camino_completo = camino
+                costo_total = g_actual
+                
+                self.metricas.update({
+                    'pasos': len(camino_completo) - 1,
+                    'costo': costo_total,
+                    'nodos_expandidos': nodos_expandidos,
+                    'tecnica': 'a_star'
+                })
+                print(f"✅ [A*] Camino encontrado! Costo: {costo_total}, Pasos: {len(camino_completo)-1}")
+                return camino_completo
+            
+            # Explorar vecinos
+            for vecino in self._obtener_vecinos_validos(*nodo):
+                # Calcular g_score tentativo
+                g_tentativo = g_actual + self._costo_celda(*vecino)
+                
+                # Si encontramos un mejor camino a vecino
+                if vecino not in g_score or g_tentativo < g_score[vecino]:
+                    # Actualizar registros
+                    came_from[vecino] = nodo
+                    g_score[vecino] = g_tentativo
+                    h_score = self._heuristica(*vecino)
+                    f_score[vecino] = g_tentativo + h_score
+                    
+                    # Añadir a frontera
+                    contador += 1
+                    nuevo_camino = camino + [vecino]
+                    heapq.heappush(heap, (f_score[vecino], contador, g_tentativo, nuevo_camino))
+        
+        # No se encontró camino
+        self.metricas['nodos_expandidos'] = nodos_expandidos
+        print(f"❌ [A*] No se encontró camino")
+        return None
+
+    # ─────────────────────────────────────────────────────────────────
     # Búsqueda Paso a Paso
     # ─────────────────────────────────────────────────────────────────
 
@@ -286,6 +372,8 @@ class AgenteHex(Agente):
             return self._dfs_paso_a_paso()
         elif tecnica == 'costouniforme':
             return self._ucs_paso_a_paso()
+        elif tecnica == 'a_star':  # NUEVO
+            return self._a_star_paso_a_paso()
         else:
             raise ValueError(f"Técnica desconocida: '{tecnica}'")
 
@@ -443,6 +531,66 @@ class AgenteHex(Agente):
                 if vecino not in visitados or visitados[vecino] > nuevo_costo:
                     contador += 1
                     heapq.heappush(heap, (nuevo_costo, contador, camino + [vecino]))
+            
+            yield 'EXPLORANDO', self._preparar_resultado_parcial(camino)
+        
+        yield 'NO_ENCONTRADO', None
+
+
+    # ─────────────────────────────────────────────────────────────────
+    # A* Paso a Paso 
+    # ─────────────────────────────────────────────────────────────────
+    def _a_star_paso_a_paso(self):
+        """Versión paso a paso de A* para visualización."""
+        inicio, meta = self._inicio, self._meta
+        
+        contador = 0
+        g_score = {inicio: 0}
+        f_score = {inicio: self._heuristica(*inicio)}
+        
+        heap = [(f_score[inicio], contador, g_score[inicio], [inicio])]
+        visitados = set()
+        nodos_expandidos = 0
+        self.costo_acumulado[inicio] = 0
+        
+        while heap:
+            f_actual, _, g_actual, camino = heapq.heappop(heap)
+            nodo = camino[-1]
+            
+            if nodo in visitados:
+                continue
+                
+            # Registrar exploración
+            visitados.add(nodo)
+            nodos_expandidos += 1
+            self._registrar_exploracion(nodo, camino,
+                                    {'nodos_expandidos': nodos_expandidos})
+            self.costo_acumulado[nodo] = g_actual
+            
+            if nodo == meta:
+                costo = g_actual
+                self.metricas.update({
+                    'pasos': len(camino) - 1,
+                    'costo': costo,
+                    'tecnica': 'a_star'
+                })
+                yield 'ENCONTRADO', camino
+                return
+            
+            for vecino in self._obtener_vecinos_validos(*nodo):
+                if vecino in visitados:
+                    continue
+                    
+                g_tentativo = g_actual + self._costo_celda(*vecino)
+                
+                if vecino not in g_score or g_tentativo < g_score[vecino]:
+                    g_score[vecino] = g_tentativo
+                    h_score = self._heuristica(*vecino)
+                    f_score[vecino] = g_tentativo + h_score
+                    
+                    contador += 1
+                    nuevo_camino = camino + [vecino]
+                    heapq.heappush(heap, (f_score[vecino], contador, g_tentativo, nuevo_camino))
             
             yield 'EXPLORANDO', self._preparar_resultado_parcial(camino)
         

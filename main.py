@@ -25,6 +25,8 @@ COLOR_UCS_LO  = (80,  40,    0)
 COLOR_UCS_HI  = (255, 160,   0)
 COLOR_GAME_OVER = (255, 0, 0, 200)
 COLOR_VICTORIA = (0, 255, 0, 200)
+COLOR_ASTAR_LO = (0, 100, 100)    # Verde azulado oscuro
+COLOR_ASTAR_HI = (0, 255, 255)    # Cian brillante
 
 # Colores para emociones y planetas
 COLOR_EMOCIONES = {
@@ -148,7 +150,8 @@ class Juego:
         self.opciones_busqueda = [
             ("B", "BFS", "Nave Exploradora", (0, 170, 255)),
             ("D", "DFS", "Nave Aventurera", (255, 170, 0)),
-            ("U", "UCS", "Nave Estratega", (255, 100, 0))
+            ("U", "UCS", "Nave Estratega", (255, 100, 0)),
+            ("A", "A*", "Nave Heurística", (0, 255, 255))
         ]
 
     def cargar_nivel(self, idx):
@@ -305,7 +308,6 @@ class Juego:
 
     def _iniciar_busqueda_paso_a_paso(self, tecnica: str):
         """Inicia una búsqueda paso a paso"""
-        # Verificar batería
         if not self.bateria_infinita and self.energia_restante <= 0:
             self.mostrar_mensaje("¡Sin batería! Presiona N para siguiente nivel", (255, 0, 0))
             return
@@ -323,7 +325,12 @@ class Juego:
         self.estadisticas = None
         self.mostrar_boton_elegir = False
         
-        nombres = {'anchura': 'Exploradora', 'profundidad': 'Aventurera', 'costouniforme': 'Estratega'}
+        nombres = {
+            'anchura': 'Exploradora', 
+            'profundidad': 'Aventurera', 
+            'costouniforme': 'Estratega',
+            'a_star': 'Heurística'  # NUEVO
+        }
         print(f"🚀 Iniciando {nombres[tecnica]}...")
         self.voz.hablar(f"Usando nave {nombres[tecnica]}")
 
@@ -1024,7 +1031,7 @@ class Juego:
         
         # Distribución amplia usando PROPORCIONES de pantalla (20%, 50%, 80%)
         # Esto separa las opciones y aprovecha el ancho completo
-        centros_x = [int(ANCHO * 0.20), int(ANCHO * 0.50), int(ANCHO * 0.80)]
+        centros_x = [int(ANCHO * 0.15), int(ANCHO * 0.38), int(ANCHO * 0.62), int(ANCHO * 0.85)]
         
         for i, (tecla, sigla, nombre, color) in enumerate(self.opciones_busqueda):
             # Posición base de cada grupo
@@ -1175,6 +1182,8 @@ class Juego:
                         self._iniciar_busqueda_paso_a_paso('profundidad')
                     elif k == pygame.K_u:
                         self._iniciar_busqueda_paso_a_paso('costouniforme')
+                    elif k == pygame.K_a:  
+                        self._iniciar_busqueda_paso_a_paso('a_star')
                 
                 # Teclas numéricas para emociones
                 elif self.estado == "SELECCION_EMOCION":
