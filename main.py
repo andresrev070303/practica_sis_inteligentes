@@ -303,19 +303,29 @@ class Juego:
                 casillas_camino = len(camino_final)
                 energia_gastada = casillas_camino - 1
                 
+                # Verificar si hay suficiente batería
+                if not self.bateria_infinita and energia_gastada > self.energia_restante:
+                    self.voz.hablar("No tenemos suficiente batería para esta ruta. Prueba otra nave.")
+                    self.mostrar_boton_elegir = False
+                    return
+                
                 self.estadisticas = {
                     'pasos_totales': pasos_totales,
                     'casillas_camino': casillas_camino,
                     'energia_gastada': energia_gastada,
                     'energia_restante': self.energia_restante - energia_gastada if not self.bateria_infinita else self.energia_restante,
-                    'tecnica': self.resultado.get('tecnica', 'anchura')
+                    'tecnica': self.resultado.get('tecnica', 'anchura') if self.resultado else 'anchura'
                 }
                 
                 self.resultado = self.agente._preparar_resultado_parcial(camino_final)
                 self.resultado['camino_set'] = set(camino_final)
                 
                 print(f"✅ Búsqueda completada! Energía a gastar: {energia_gastada}")
-                self.mostrar_boton_elegir = True
+                
+                # Mensaje de éxito con opción
+                if energia_gastada <= self.energia_restante or self.bateria_infinita:
+                    self.voz.hablar(f"¡Encontré un camino! Gasta {energia_gastada} de batería. ¿Te gusta esta nave?")
+                    self.mostrar_boton_elegir = True
                 
             elif estado == 'NO_ENCONTRADO':
                 self.busqueda_activa = False
@@ -333,35 +343,45 @@ class Juego:
         
         energia_gastada = self.estadisticas['energia_gastada']
         
-        # Verificar si tiene suficiente batería
         if not self.bateria_infinita and energia_gastada > self.energia_restante:
-            self.mostrar_mensaje("¡No tienes suficiente batería para esta ruta!", (255, 0, 0))
-            self.voz.hablar("No tienes suficiente batería. Prueba otra nave.")
+            self.mostrar_mensaje("¡No tienes suficiente batería!", (255, 0, 0))
+            self.voz.hablar("No tenemos batería suficiente. Prueba otra nave.")
             return
         
-        # Guardar resultado elegido
+        # Guardar resultado
         self.resultado_elegido = self.resultado
         self.estadisticas_elegidas = self.estadisticas.copy()
         
-        # Restar energía
         if not self.bateria_infinita:
             self.energia_restante -= energia_gastada
         
         self.mostrar_boton_elegir = False
         
-        # Verificar si llegó a la meta
+        # Mensaje de éxito
+        planeta = PLANETAS[self.emocion_seleccionada]
         if self.energia_restante >= 0:
+            # Frase de éxito
+            frases_exito = [
+                f"¡Lo logramos pequeño astronauta! Llegamos al planeta {planeta}.",
+                f"¡Misión cumplida! Conectamos con {planeta}. Nos quedan {self.energia_restante} de batería.",
+                f"¡Bien hecho! Llegamos a {planeta}. Aún tenemos {self.energia_restante} de energía."
+            ]
+            self.voz.hablar(random.choice(frases_exito))
+            
             nivel = self.gestor_niveles.obtener_nivel()
             if "victoria" in nivel["mensajes"]:
                 self.mostrar_mensaje(nivel["mensajes"]["victoria"], (0, 255, 0))
             else:
                 self.mostrar_mensaje("¡Llegamos al planeta!", (0, 255, 0))
-            self.voz.hablar("¡Llegamos al planeta!")
+            
             self.estado = "COMPLETADO"
+            
+            # Advertencia de batería baja
+            if not self.bateria_infinita and self.energia_restante < 5:
+                self.voz.hablar_frase("bateria_baja", energia=self.energia_restante)
         else:
             self.estado = "GAME_OVER"
-            nivel = self.gestor_niveles.obtener_nivel()
-            self.mostrar_mensaje(nivel["mensajes"]["derrota"], (255, 0, 0))
+            self.voz.hablar("¡Oh no! Nos quedamos sin batería. Intenta de nuevo.")
 
     # ── Dibujo ─────────────────────────────────────────────────────────────
 
@@ -735,30 +755,35 @@ class Juego:
     # ── Voz ────────────────────────────────────────────────────────────────
 
     def activar_voz(self):
-        """Reconocimiento de voz"""
+        """Activa reconocimiento de voz con tecla V"""
         if self.estado != "SELECCION_EMOCION":
             return
         
-        self.voz.hablar("¿Cómo te sientes hoy?")
+        self.voz.hablar_frase("pregunta_emocion")
         pygame.time.wait(2000)
         
         texto = self.voz.escuchar()
+        
         if not texto:
-            self.voz.hablar("No te escuché bien. Intenta de nuevo.")
+            self.voz.hablar("No te escuché bien. ¿Puedes repetir? Presiona V otra vez.")
             return
         
-        if "triste" in texto:
-            self.seleccionar_emocion("tristeza")
-        elif "miedo" in texto:
-            self.seleccionar_emocion("miedo")
-        elif "enojado" in texto:
-            self.seleccionar_emocion("enojo")
-        elif "alegre" in texto:
-            self.seleccionar_emocion("alegria")
-        elif "ansioso" in texto:
-            self.seleccionar_emocion("ansiedad")
+        emocion = self.voz.detectar_emocion(texto)
+        
+        if emocion:
+            # Mensaje personalizado según emoción
+            mensajes_emocion = {
+                "tristeza": "Entiendo, te sientes triste. Vamos al planeta Juego a alegrarnos.",
+                "miedo": "Tranquilo, el miedo se pasa. Busquemos el planeta Calma.",
+                "enojo": "Respira hondo. El planeta Abrazo nos espera.",
+                "alegria": "¡Qué bien! Compartamos esa alegría en el planeta Amigos.",
+                "ansiedad": "Vamos al planeta Respiración a calmarnos."
+            }
+            self.voz.hablar(mensajes_emocion[emocion])
+            pygame.time.wait(2000)
+            self.seleccionar_emocion(emocion)
         else:
-            self.voz.hablar("No reconozco esa emoción. Intenta de nuevo.")
+            self.voz.hablar("No reconocí esa emoción. Intenta con: triste, miedo, enojado, alegre o ansioso.")
 
     # ── Bucle principal ────────────────────────────────────────────────────
 
