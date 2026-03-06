@@ -134,28 +134,31 @@ class Juego:
         """Carga la configuración de un nivel"""
         nivel = self.gestor_niveles.obtener_nivel(idx)
         
-        # Configurar tablero
+        # Configurar tablero con radio del nivel
         radio = nivel.get("radio_tablero", 4)
         self.tablero = TableroHexagonal(radio)
+        
+        # Configurar el tablero con planetas y obstáculos desde el nivel
+        self.tablero.configurar_desde_nivel(nivel)
         
         # Reiniciar agente con nuevo tablero
         self.agente = AgenteHex(self.tablero)
         
-        # Configurar costos
-        if nivel.get("costos") == "uniformes":
-            for celda in self.tablero.celdas.values():
-                celda.costo = 1
-        else:
-            self.tablero.asignar_costos_aleatorios()
-        
         # Energía (batería)
-        self.energia_total = nivel.get("energia_inicial", 20)
-        self.energia_restante = self.energia_total
         self.bateria_infinita = nivel.get("bateria_infinita", False)
+        if not self.bateria_infinita:
+            self.energia_total = nivel.get("bateria_inicial", 15)
+            self.energia_restante = self.energia_total
+        else:
+            self.energia_total = 999
+            self.energia_restante = 999
         
-        # Meta según nivel
-        meta_coords = nivel.get("meta", [3, -3])
-        self.meta = tuple(meta_coords)
+        # Inicio del nivel (puede variar)
+        inicio_coords = nivel.get("inicio", [0, 0])
+        self.inicio = tuple(inicio_coords)
+        
+        # IMPORTANTE: NO definir meta aquí. Será cuando seleccione emoción
+        self.meta = None
         
         # Reiniciar estados
         self.emocion_seleccionada = None
@@ -167,7 +170,12 @@ class Juego:
         self.estado = "SELECCION_EMOCION"
         
         print(f"📖 Nivel {idx}: {nivel['nombre']}")
-        print(f"🔋 Batería: {self.energia_total}" + (" (INFINITA)" if self.bateria_infinita else ""))
+        print(f"🚀 Inicio: {self.inicio}")
+        print(f"🌍 Planetas disponibles: {list(nivel['planetas'].keys())}")
+        if not self.bateria_infinita:
+            print(f"🔋 Batería inicial: {self.energia_total}")
+        else:
+            print(f"🔋 Batería: INFINITA")
 
     # ── Menú de emociones ───────────────────────────────────────────────────
 
@@ -223,10 +231,9 @@ class Juego:
         """Procesa la emoción seleccionada"""
         self.emocion_seleccionada = emocion
         
-        # Usar la meta del nivel actual
+        # IMPORTANTE: La meta debe ser la posición del planeta de esa emoción
         nivel = self.gestor_niveles.obtener_nivel()
-        meta_coords = nivel.get("meta", [3, -3])
-        self.meta = tuple(meta_coords)
+        self.meta = tuple(nivel["planetas"][emocion])  # <-- CORREGIDO: usa planetas[emocion]
         
         planeta = PLANETAS[emocion]
         print(f"🎯 Emoción: {emocion} → Planeta {planeta} en {self.meta}")
@@ -240,7 +247,8 @@ class Juego:
         self.resultado_elegido = None
         
         # Restaurar energía
-        self.energia_restante = self.energia_total
+        if not self.bateria_infinita:
+            self.energia_restante = self.energia_total
         
         pygame.time.wait(1500)
         self.voz.hablar("Elige una nave: B, D o U")
@@ -255,7 +263,12 @@ class Juego:
             return
         
         self.busqueda_activa = True
-        self.generador_busqueda = self.agente.buscar_paso_a_paso(self.inicio, self.meta, tecnica)
+        self.generador_busqueda = self.agente.buscar_paso_a_paso(
+            self.inicio, 
+            self.meta, 
+            tecnica,
+            self.emocion_seleccionada  # Pasar la emoción destino
+        )
         self.contador_pasos = 0
         self.ultimo_tiempo = pygame.time.get_ticks()
         self.resultado = None
@@ -353,14 +366,25 @@ class Juego:
     # ── Dibujo ─────────────────────────────────────────────────────────────
 
     def _color_celda(self, q, r):
-        """Color según estado de búsqueda"""
+        """Color de relleno según el estado de la búsqueda y obstáculos."""
         pos = (q, r)
         
+        # Prioridad 1: Inicio y Meta
         if pos == self.inicio:
             return COLOR_INICIO
         if pos == self.meta:
             return COLOR_META
 
+        # Prioridad: Mostrar obstáculos si no hay búsqueda activa
+        if self.resultado is None and self.resultado_elegido is None:
+            celda = self.tablero.obtener_celda(q, r)
+            if celda and celda.obstaculo:
+                color_obs = self.tablero.obtener_color_obstaculo(q, r)
+                if color_obs:
+                    return color_obs
+            return COLOR_NORMAL
+
+        # Resto igual que antes...
         resultado_actual = self.resultado_elegido if self.resultado_elegido else self.resultado
         
         if not resultado_actual:
@@ -371,6 +395,11 @@ class Juego:
 
         explorados = resultado_actual.get('explorados', [])
         if pos not in explorados:
+            celda = self.tablero.obtener_celda(q, r)
+            if celda and celda.obstaculo:
+                color_obs = self.tablero.obtener_color_obstaculo(q, r)
+                if color_obs:
+                    return color_obs
             return COLOR_NORMAL
 
         idx = explorados.index(pos)
@@ -401,22 +430,56 @@ class Juego:
             pygame.draw.line(self.pantalla, (255, 255, 60), puntos[i], puntos[i + 1], 3)
 
     def dibujar_tablero(self):
-        """Dibuja el tablero"""
+        """Dibuja el tablero hexagonal con planetas y obstáculos"""
         for (q, r), celda in self.tablero.celdas.items():
             x, y = self.hex_a_pantalla(q, r)
-            color = self._color_celda(q, r)
-            self._dibujar_hex(x, y, color)
             
-            # Dibujar planeta si es meta
-            if (q, r) == self.meta:
-                for emocion, pos in POSICIONES_PLANETAS.items():
-                    if pos == self.meta:
-                        pygame.draw.circle(self.pantalla, COLOR_EMOCIONES[emocion], (x, y), 12)
-                        pygame.draw.circle(self.pantalla, (255, 255, 255), (x, y), 12, 2)
-                        letra = PLANETAS[emocion][0]
-                        sf = self.fuente_sm.render(letra, True, (255, 255, 255))
-                        self.pantalla.blit(sf, (x - 5, y - 8))
-                        break
+            # Obtener color base
+            color_base = self._color_celda(q, r)
+            
+            # Si es un planeta y no es el destino, pintar de gris
+            if celda.es_planeta and celda.planeta != self.emocion_seleccionada:
+                color_base = (80, 80, 100)
+            
+            # Dibujar hexágono
+            self._dibujar_hex(x, y, color_base)
+            
+            # Si es un planeta, dibujar círculo
+            if celda.es_planeta:
+                if celda.planeta == self.emocion_seleccionada:
+                    # Planeta destino (resaltado)
+                    color_planeta = COLOR_EMOCIONES.get(celda.planeta, (255, 255, 255))
+                    pygame.draw.circle(self.pantalla, color_planeta, (x, y), 15)
+                    pygame.draw.circle(self.pantalla, (255, 255, 255), (x, y), 15, 3)
+                    # Brillo alrededor del planeta destino
+                    for i in range(3):
+                        radio_brillo = 20 + i * 3
+                        alpha = 100 - i * 30
+                        brillo = pygame.Surface((radio_brillo*2, radio_brillo*2), pygame.SRCALPHA)
+                        pygame.draw.circle(brillo, (*color_planeta, alpha), (radio_brillo, radio_brillo), radio_brillo)
+                        self.pantalla.blit(brillo, (x - radio_brillo, y - radio_brillo))
+                else:
+                    # Otros planetas (normales)
+                    color_planeta = COLOR_EMOCIONES.get(celda.planeta, (255, 255, 255))
+                    pygame.draw.circle(self.pantalla, color_planeta, (x, y), 12)
+                    pygame.draw.circle(self.pantalla, (200, 200, 200), (x, y), 12, 2)
+                
+                # Inicial del planeta
+                letra = PLANETAS[celda.planeta][0]
+                sf = self.fuente_sm.render(letra, True, (255, 255, 255))
+                self.pantalla.blit(sf, (x - 5, y - 8))
+            
+            # Si tiene obstáculo, dibujar símbolo
+            elif celda.obstaculo:
+                if celda.obstaculo == 'asteroide':
+                    pygame.draw.circle(self.pantalla, (200, 200, 200), (x, y), 5)
+                    pygame.draw.circle(self.pantalla, (255, 255, 255), (x, y), 5, 1)
+                elif celda.obstaculo == 'tormenta':
+                    for i in range(3):
+                        pygame.draw.circle(self.pantalla, (200, 200, 200), (x + i*3, y - i*2), 2)
+                elif celda.obstaculo == 'agujero_negro':
+                    pygame.draw.circle(self.pantalla, (0, 0, 0), (x, y), 8)
+                    pygame.draw.circle(self.pantalla, (255, 0, 255), (x, y), 8, 1)
 
     def _dibujar_hex(self, x, y, relleno, borde=(200, 200, 200), grosor=1):
         pts = []

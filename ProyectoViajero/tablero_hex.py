@@ -7,13 +7,16 @@ class Celda:
     """Representa una celda hexagonal del tablero"""
 
     def __init__(self, q, r):
-        self.q = q  # Coordenada axial q  (positivo → derecha)
-        self.r = r  # Coordenada axial r  (positivo → abajo-derecha)
-        self.tipo = 'espacio'        # Por defecto, espacio vacío
-        self.color = (50, 50, 80)    # Color por defecto
-        self.emocion = None          # Personaje/emoción en esta celda
-        self.planeta = None          # Planeta destino en esta celda
-        self.costo = 1               # Costo de traversal (1 = normal, 2+ = difícil)
+        self.q = q
+        self.r = r
+        self.tipo = 'espacio'
+        self.color = (50, 50, 80)
+        self.emocion = None
+        self.planeta = None
+        self.costo = 1
+        self.obstaculo = None
+        self.es_planeta = False
+        self.planeta_emocion = None
 
     def __repr__(self):
         return f"Celda({self.q},{self.r})"
@@ -22,19 +25,18 @@ class Celda:
 class TableroHexagonal:
     """
     Tablero con FORMA HEXAGONAL usando coordenadas axiales centradas en (0,0).
-
-    Todas las celdas (q, r) que cumplen  max(|q|, |r|, |q+r|) <= radio
-    forman un hexágono perfecto de 'radio' anillos.
     """
 
-    def __init__(self, radio: int = RADIO_TABLERO):
+    def __init__(self, radio: int = 4):
         self.radio = radio
         self.celdas: dict[tuple[int, int], Celda] = {}
         self._crear_tablero()
-
-    # ------------------------------------------------------------------
-    # Construcción
-    # ------------------------------------------------------------------
+        self.colores_obstaculos = {
+            'asteroide': (139, 69, 19),      # Marrón
+            'tormenta': (128, 128, 128),      # Gris
+            'agujero_negro': (0, 0, 0)         # Negro
+        }
+        self.planetas = {}  # Guardar posiciones de planetas
 
     def _crear_tablero(self):
         """Genera todas las celdas en forma de hexágono."""
@@ -45,10 +47,6 @@ class TableroHexagonal:
                 self.celdas[(q, r)] = Celda(q, r)
         total = len(self.celdas)
         print(f"✅ Tablero hexagonal creado: radio={self.radio}, {total} celdas")
-
-    # ------------------------------------------------------------------
-    # Consultas
-    # ------------------------------------------------------------------
 
     def obtener_vecinos(self, q: int, r: int) -> list[tuple[int, int]]:
         """Devuelve los vecinos válidos (que existen en el tablero)."""
@@ -63,47 +61,122 @@ class TableroHexagonal:
         return self.celdas.get((q, r))
 
     def obtener_distancia(self, q1: int, r1: int, q2: int, r2: int) -> int:
-        """
-        Distancia hexagonal mínima entre dos celdas.
-        Fórmula: (|dq| + |dr| + |dq+dr|) / 2
-        """
+        """Distancia hexagonal mínima entre dos celdas."""
         dq, dr = q2 - q1, r2 - r1
         return (abs(dq) + abs(dr) + abs(dq + dr)) // 2
 
-    # ------------------------------------------------------------------
-    # Colocación de elementos
-    # ------------------------------------------------------------------
-
-    def colocar_personaje(self, emocion: str, q: int, r: int):
-        """Coloca un personaje (emoción) en una celda."""
-        if (q, r) in self.celdas:
-            self.celdas[(q, r)].emocion = emocion
-            print(f"👤 Personaje '{emocion}' colocado en ({q},{r})")
-        else:
-            print(f"⚠️  ({q},{r}) está fuera del tablero hexagonal")
-
-    def colocar_planeta(self, planeta: str, q: int, r: int):
+    def colocar_planeta(self, emocion: str, q: int, r: int):
         """Coloca un planeta destino en una celda."""
         if (q, r) in self.celdas:
-            self.celdas[(q, r)].planeta = planeta
-            print(f"🪐 Planeta '{planeta}' colocado en ({q},{r})")
-        else:
-            print(f"⚠️  ({q},{r}) está fuera del tablero hexagonal")
+            celda = self.celdas[(q, r)]
+            celda.planeta = emocion
+            celda.es_planeta = True
+            celda.planeta_emocion = emocion
+            celda.costo = 1  # El planeta en sí no tiene costo extra
+            self.planetas[emocion] = (q, r)
 
-    # ------------------------------------------------------------------
+    def colocar_obstaculo(self, tipo: str, q: int, r: int, costo: int):
+        """Coloca un obstáculo en una celda."""
+        if (q, r) in self.celdas:
+            celda = self.celdas[(q, r)]
+            celda.obstaculo = tipo
+            celda.costo = costo
+            celda.tipo = tipo
 
-    def asignar_costos_aleatorios(self, semilla: int = 42):
-        """
-        Asigna costos variados a las celdas para demostrar la Búsqueda de
-        Costo Uniforme.  Distribución: 60% costo 1, 25% costo 2, 15% costo 3.
-        El inicio y la meta siempre conservan costo 1.
-        """
-        import random
-        rng = random.Random(semilla)
-        pesos = [1] * 6 + [2] * 3 + [3] * 1  # distribución 60/30/10
+    def configurar_desde_nivel(self, nivel):
+        """Configura el tablero según el nivel."""
+        self.radio = nivel.get("radio_tablero", 4)
+        self._crear_tablero()
+        self.planetas = {}
+        
+        # Establecer costo normal por defecto
+        costo_normal = 1
+        
+        # Si existe la clave "costos", obtener valores
+        if "costos" in nivel:
+            costo_normal = nivel["costos"].get("normal", 1)
+        
+        # Asignar costo normal a todas las celdas
         for celda in self.celdas.values():
-            celda.costo = rng.choice(pesos)
-        print("⚡ Costos asignados aleatoriamente a las celdas")
+            celda.costo = costo_normal
+        
+        # Colocar planetas
+        for emocion, pos in nivel["planetas"].items():
+            self.colocar_planeta(emocion, pos[0], pos[1])
+        
+        # Colocar obstáculos (si existen)
+        for obs in nivel.get("obstaculos", []):
+            tipo = obs["tipo"]
+            q, r = obs["posicion"]
+            # Los obstáculos tienen costo alto pero NO se puede pasar
+            self.colocar_obstaculo(tipo, q, r, 999)
 
-    def __repr__(self):
-        return f"TableroHexagonal(radio={self.radio}, celdas={len(self.celdas)})"
+    def obtener_costo_celda(self, q: int, r: int, emocion_destino: str = None) -> int:
+        """
+        Obtiene el costo de una celda.
+        Si es un planeta y NO es el destino, cuesta 5.
+        """
+        celda = self.obtener_celda(q, r)
+        if not celda:
+            return 999  # Costo infinito si no existe
+        
+        # Si es un planeta y NO es el destino, cuesta 5
+        if celda.es_planeta and celda.planeta != emocion_destino:
+            return 5
+        
+        # Si tiene obstáculo, usar su costo
+        if celda.obstaculo:
+            return celda.costo
+        
+        # Costo normal
+        return 1
+
+    def obtener_color_celda(self, q, r, emocion_destino=None):
+        """Devuelve el color de la celda para dibujar."""
+        celda = self.obtener_celda(q, r)
+        if not celda:
+            return (50, 50, 80)
+        
+        # Si es el planeta destino, usar color especial (se dibuja aparte)
+        if celda.es_planeta and celda.planeta == emocion_destino:
+            return None  # None indica que se dibujará como planeta
+        
+        # Si es otro planeta, color gris con borde
+        if celda.es_planeta:
+            return (80, 80, 100)  # Color para otros planetas
+        
+        # Si tiene obstáculo
+        if celda.obstaculo:
+            return self.colores_obstaculos.get(celda.obstaculo, (255, 0, 255))
+        
+        return (50, 50, 80)  # Color normal
+    
+    # En ProyectoViajero/tablero_hex.py, añade este método:
+
+    def obtener_color_obstaculo(self, q, r):
+        """Devuelve el color del obstáculo en la celda (q,r)"""
+        celda = self.obtener_celda(q, r)
+        if celda and celda.obstaculo:
+            return self.colores_obstaculos.get(celda.obstaculo, (255, 0, 255))
+        return None
+    
+    def es_transitable(self, q: int, r: int, emocion_destino: str = None) -> bool:
+        """
+        Determina si una celda es transitable para el camino final.
+        No se puede pasar por:
+        - Obstáculos (asteroides, tormentas, agujeros negros)
+        - Otros planetas (que no sean el destino)
+        """
+        celda = self.obtener_celda(q, r)
+        if not celda:
+            return False
+        
+        # No se puede pasar por obstáculos
+        if celda.obstaculo:
+            return False
+        
+        # No se puede pasar por otros planetas (excepto el destino)
+        if celda.es_planeta and celda.planeta != emocion_destino:
+            return False
+        
+        return True

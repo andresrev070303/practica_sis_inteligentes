@@ -6,108 +6,173 @@
       "descripcion": "Aprende cómo exploran las naves",
       "tipo": "introductorio",
       "radio_tablero": 4,
-      "energia_inicial": 999,
+      "bateria_inicial": 999,
       "bateria_infinita": true,
       "inicio": [0, 0],
-      "meta": [3, -3],
-      "costos": "uniformes",
-      "demostraciones": [
-        {
-          "algoritmo": "anchura",
-          "nombre_amigable": "Nave Exploradora",
-          "descripcion": "Exploro primero todo lo que está cerca",
-          "color": "#00AAFF"
-        },
-        {
-          "algoritmo": "profundidad",
-          "nombre_amigable": "Nave Aventurera", 
-          "descripcion": "Sigo un camino hasta el final",
-          "color": "#FFAA00"
-        },
-        {
-          "algoritmo": "costouniforme",
-          "nombre_amigable": "Nave Estratega",
-          "descripcion": "Pienso antes de moverme",
-          "color": "#FF5500"
-        }
+      "planetas": {
+        "tristeza": [3, -3],
+        "miedo": [-2, 2],
+        "enojo": [0, 4],
+        "alegria": [-3, 0],
+        "ansiedad": [2, 2]
+      },
+      "obstaculos": [
+        {"posicion": [1, 0], "tipo": "asteroide"},
+        {"posicion": [-1, 1], "tipo": "asteroide"}
       ],
       "mensajes": {
-        "inicio": "¡Bienvenido a la Academia de Naves! Aquí la batería es infinita. Prueba todas las naves.",
-        "victoria": "¡Excelente! Has completado el tutorial.",
-        "despues_demo": "¿Qué nave quieres usar?",
-        "fin": "¡Bien! Ahora entiendes cómo exploramos."
+        "inicio": "¡Bienvenido a la Academia de Naves! Batería infinita. Prueba todas las naves.",
+        "victoria": "¡Excelente! Has completado el tutorial."
       }
     },
     {
       "id": 1,
       "nombre": "Primeros Pasos",
-      "descripcion": "Llega al planeta con 15 de batería",
+      "descripcion": "Introducción a obstáculos",
       "tipo": "normal",
       "radio_tablero": 4,
-      "energia_inicial": 15,
-      "bateria_infinita": false,
+      "bateria_inicial": 14,
       "inicio": [0, 0],
-      "meta": [3, -3],
-      "costos": "uniformes",
-      "obstaculos": [],
+      "planetas": {
+        "tristeza": [3, -3],
+        "miedo": [-2, 2],
+        "enojo": [0, 4],
+        "alegria": [-3, 0],
+        "ansiedad": [2, 2]
+      },
+      "obstaculos": [
+        {"posicion": [1, 0], "tipo": "asteroide"},
+        {"posicion": [2, -1], "tipo": "asteroide"},
+        {"posicion": [1, 1], "tipo": "asteroide"},
+        {"posicion": [-1, 1], "tipo": "asteroide"}
+      ],
       "mensajes": {
-        "inicio": "Nivel 1: Tienes 15 de batería. ¡Cada paso gasta 1!",
-        "victoria": "¡Excelente! Llegaste al planeta.",
-        "derrota": "¡Oh no! Te quedaste sin batería. Intenta con otra nave."
+        "inicio": "Nivel 1: Cuidado con los asteroides. Batería: 14.",
+        "victoria": "¡Excelente! Superaste el nivel 1."
       }
     },
     {
       "id": 2,
-      "nombre": "Camino más corto",
-      "descripcion": "Encuentra el camino que menos batería gaste",
+      "nombre": "Campo de Asteroides",
+      "descripcion": "Más obstáculos",
       "tipo": "normal",
       "radio_tablero": 4,
-      "energia_inicial": 12,
-      "bateria_infinita": false,
+      "bateria_inicial": 13,
       "inicio": [0, 0],
-      "meta": [-2, 2],
-      "costos": "uniformes",
-      "obstaculos": [],
+      "planetas": {
+        "tristeza": [3, -3],
+        "miedo": [-2, 2],
+        "enojo": [0, 4],
+        "alegria": [-3, 0],
+        "ansiedad": [2, 2]
+      },
+      "obstaculos": [
+        {"posicion": [1, 0], "tipo": "asteroide"},
+        {"posicion": [2, -1], "tipo": "asteroide"},
+        {"posicion": [1, 1], "tipo": "tormenta"},
+        {"posicion": [0, 1], "tipo": "asteroide"},
+        {"posicion": [-1, 1], "tipo": "tormenta"},
+        {"posicion": [-1, 0], "tipo": "asteroide"}
+      ],
       "mensajes": {
-        "inicio": "Nivel 2: Tienes 12 de batería. Elige la nave que menos gaste.",
-        "victoria": "¡Bien! Ahorraste batería.",
-        "derrota": "Gastaste demasiada batería. Prueba BFS para el camino más corto."
+        "inicio": "Nivel 2: Asteroides y tormentas. Batería: 13.",
+        "victoria": "¡Bien! Esquivaste los obstáculos."
       }
     },
     {
       "id": 3,
-      "nombre": "Terreno Variado",
-      "descripcion": "Celdas con diferente costo",
+      "nombre": "Tormenta Espacial",
+      "descripcion": "Obstáculos variados",
       "tipo": "normal",
-      "radio_tablero": 4,
-      "energia_inicial": 18,
-      "bateria_infinita": false,
+      "radio_tablero": 5,
+      "bateria_inicial": 12,
       "inicio": [0, 0],
-      "meta": [2, 2],
-      "costos": "variables",
-      "obstaculos": [],
+      "planetas": {
+        "tristeza": [4, -3],
+        "miedo": [-3, 4],
+        "enojo": [2, 4],
+        "alegria": [-4, 2],
+        "ansiedad": [3, -2]
+      },
+      "obstaculos": [
+        {"posicion": [2, -1], "tipo": "asteroide"},
+        {"posicion": [1, 1], "tipo": "tormenta"},
+        {"posicion": [1, 2], "tipo": "asteroide"},
+        {"posicion": [0, 2], "tipo": "agujero_negro"},
+        {"posicion": [-1, 2], "tipo": "tormenta"},
+        {"posicion": [-2, 1], "tipo": "asteroide"},
+        {"posicion": [3, -1], "tipo": "asteroide"},
+        {"posicion": [2, 0], "tipo": "tormenta"}
+      ],
       "mensajes": {
-        "inicio": "Nivel 3: Hay celdas que gastan más batería. ¡Elige bien!",
-        "victoria": "¡Genial! Supiste evitar terrenos difíciles.",
-        "derrota": "Te metiste en terreno complicado. Prueba UCS para minimizar costo."
+        "inicio": "Nivel 3: ¡Agujeros negros! Batería: 12.",
+        "victoria": "¡Genial! Sobreviviste a la tormenta."
       }
     },
     {
       "id": 4,
-      "nombre": "Desafío Final",
-      "descripcion": "Combina todo lo aprendido",
+      "nombre": "Laberinto Mortal",
+      "descripcion": "Máxima obstaculización",
       "tipo": "normal",
       "radio_tablero": 5,
-      "energia_inicial": 20,
-      "bateria_infinita": false,
+      "bateria_inicial": 11,
       "inicio": [0, 0],
-      "meta": [4, -2],
-      "costos": "variables",
-      "obstaculos": ["miedo", "tormenta"],
+      "planetas": {
+        "tristeza": [4, -3],
+        "miedo": [-3, 4],
+        "enojo": [2, 3],
+        "alegria": [-4, 1],
+        "ansiedad": [3, -1]
+      },
+      "obstaculos": [
+        {"posicion": [1, 0], "tipo": "asteroide"},
+        {"posicion": [2, -1], "tipo": "tormenta"},
+        {"posicion": [1, 1], "tipo": "asteroide"},
+        {"posicion": [0, 2], "tipo": "agujero_negro"},
+        {"posicion": [-1, 1], "tipo": "tormenta"},
+        {"posicion": [2, 0], "tipo": "asteroide"},
+        {"posicion": [3, -2], "tipo": "agujero_negro"},
+        {"posicion": [-1, 0], "tipo": "tormenta"},
+        {"posicion": [1, -1], "tipo": "asteroide"},
+        {"posicion": [-2, 2], "tipo": "asteroide"}
+      ],
       "mensajes": {
-        "inicio": "Nivel 4: ¡El gran desafío! Elige sabiamente.",
-        "victoria": "¡Felicidades! Completaste todos los niveles.",
-        "derrota": "Casi lo logras. ¡Inténtalo de nuevo!"
+        "inicio": "Nivel 4: 10 obstáculos. Batería: 11. ¡Concéntrate!",
+        "victoria": "¡Impresionante! Encontraste el camino."
+      }
+    },
+    {
+      "id": 5,
+      "nombre": "El Gran Desafío",
+      "descripcion": "Todo combinado",
+      "tipo": "normal",
+      "radio_tablero": 6,
+      "bateria_inicial": 10,
+      "inicio": [2, -1],
+      "planetas": {
+        "tristeza": [5, -4],
+        "miedo": [-4, 5],
+        "enojo": [3, 4],
+        "alegria": [-5, 3],
+        "ansiedad": [4, -3]
+      },
+      "obstaculos": [
+        {"posicion": [3, 0], "tipo": "asteroide"},
+        {"posicion": [4, -2], "tipo": "tormenta"},
+        {"posicion": [3, -1], "tipo": "asteroide"},
+        {"posicion": [2, 1], "tipo": "tormenta"},
+        {"posicion": [1, 2], "tipo": "agujero_negro"},
+        {"posicion": [0, 2], "tipo": "asteroide"},
+        {"posicion": [-1, 2], "tipo": "agujero_negro"},
+        {"posicion": [-2, 2], "tipo": "tormenta"},
+        {"posicion": [1, 0], "tipo": "asteroide"},
+        {"posicion": [3, 1], "tipo": "asteroide"},
+        {"posicion": [4, -1], "tipo": "tormenta"},
+        {"posicion": [2, -2], "tipo": "agujero_negro"}
+      ],
+      "mensajes": {
+        "inicio": "Nivel 5: 12 obstáculos. Batería: 10. ¡Al límite!",
+        "victoria": "¡FELICIDADES! Eres un maestro explorador."
       }
     }
   ]
