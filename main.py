@@ -2,10 +2,12 @@
 import pygame
 import sys
 import math
+import random
 from config import ANCHO, ALTO, COLOR_FONDO, RADIO_HEX
 from ProyectoViajero.tablero_hex import TableroHexagonal
 from AgenteIA.AgenteHex import AgenteHex
 from ProyectoViajero.ControlVoz import ControlVoz
+from niveles import GestorNiveles
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +23,34 @@ COLOR_DFS_LO  = (50,   0,   80)
 COLOR_DFS_HI  = (200,  0,  255)
 COLOR_UCS_LO  = (80,  40,    0)
 COLOR_UCS_HI  = (255, 160,   0)
+COLOR_GAME_OVER = (255, 0, 0, 200)
+COLOR_VICTORIA = (0, 255, 0, 200)
+
+# Colores para emociones y planetas
+COLOR_EMOCIONES = {
+    "tristeza": (0, 0, 255),      # Azul
+    "miedo": (128, 0, 128),       # Morado
+    "enojo": (255, 0, 0),          # Rojo
+    "alegria": (255, 255, 0),      # Amarillo
+    "ansiedad": (0, 255, 0)        # Verde
+}
+
+PLANETAS = {
+    "tristeza": "Juego",
+    "miedo": "Calma",
+    "enojo": "Abrazo",
+    "alegria": "Amigos",
+    "ansiedad": "Respiración"
+}
+
+# Posiciones de los planetas (coordenadas)
+POSICIONES_PLANETAS = {
+    "tristeza": (3, -3),    # Planeta Juego
+    "miedo": (-2, 2),        # Planeta Calma
+    "enojo": (0, 4),         # Planeta Abrazo
+    "alegria": (-3, 0),      # Planeta Amigos
+    "ansiedad": (2, 2)       # Planeta Respiración
+}
 
 
 def _lerp_color(c1, c2, t: float):
@@ -39,74 +69,205 @@ class Juego:
 
     def __init__(self):
         pygame.init()
+        
+        # Configurar pantalla del tamaño de config.py (NO fullscreen)
         self.pantalla = pygame.display.set_mode((ANCHO, ALTO))
-        pygame.display.set_caption("Explorador Hexagonal – BFS / DFS / Costo Uniforme")
+        pygame.display.set_caption("Conexión Mental - Búsqueda No Informada")
         self.reloj = pygame.time.Clock()
 
-        # Tablero
-        self.tablero = TableroHexagonal()
-        self.tablero.asignar_costos_aleatorios()   # costos 1-3 para UCS
-
-        # Cámara
+        # Cámara - centrada
         self.offset_x = ANCHO // 2
-        self.offset_y = ALTO  // 2
+        self.offset_y = ALTO // 2
         self.zoom     = 1.0
 
         # Fuentes
         self.fuente_sm = pygame.font.Font(None, 20)
         self.fuente_md = pygame.font.Font(None, 26)
-
-        # Agente buscador
-        self.agente = AgenteHex(self.tablero)
+        self.fuente_grande = pygame.font.Font(None, 36)
 
         # Control de voz
         self.voz = ControlVoz()
 
-        # Posiciones inicio/meta (coordenadas axiales)
-        self.inicio = (0,  0)
-        self.meta   = (3, -3)
-
-        # Resultado de la última búsqueda
-        self.resultado = None   # dict con tecnica, camino, explorados, etc.
+        # Gestor de niveles
+        self.gestor_niveles = GestorNiveles()
+        
+        # Estado del juego
+        self.estado = "SELECCION_EMOCION"  # SELECCION_EMOCION, BUSCANDO, COMPLETADO, GAME_OVER, VICTORIA
+        self.emocion_seleccionada = None
+        self.mensaje_estado = ""
+        self.tiempo_mensaje = 0
+        
+        # Posiciones fijas
+        self.inicio = (0, 0)
+        
+        # Tablero (se carga al iniciar)
+        self.cargar_nivel(0)
+        
+        # Resultados
+        self.resultado = None
+        self.resultado_elegido = None
+        self.estadisticas = None
+        self.estadisticas_elegidas = None
 
         # Variables para búsqueda paso a paso
         self.busqueda_activa = False
         self.generador_busqueda = None
-        self.velocidad_busqueda = 10  # pasos por segundo
+        self.velocidad_busqueda = 10
         self.contador_pasos = 0
         self.ultimo_tiempo = 0
 
-        # Instrucciones HUD
-        self.instrucciones = [
-            "Flechas / +  -  : camara / zoom",
-            "B  : BFS  (ondas concentricas)",
-            "D  : DFS  (exploracion profunda)",
-            "U  : Costo Uniforme",
-            "C  : limpiar resultado",
-            "ESPACIO : pausa/reanuda busqueda",
-            "R / F : velocidad - / +",
-            "Clic izq  :  mover INICIO",
-            "Clic der  :  mover META",
-            "ESC : salir",
-            "V  : activar control por voz",
+        # Menús
+        self.mostrar_menu_emociones = True
+        self.botones_menu = []
+        self.boton_elegir_rect = None
+        self.mostrar_boton_elegir = False
+        self.boton_siguiente_rect = None
+
+        # Opciones de búsqueda
+        self.opciones_busqueda = [
+            ("B", "BFS", "Nave Exploradora", (0, 170, 255)),
+            ("D", "DFS", "Nave Aventurera", (255, 170, 0)),
+            ("U", "UCS", "Nave Estratega", (255, 100, 0))
         ]
 
-    # ── Coordenadas ───────────────────────────────────────────────────────────
+    def cargar_nivel(self, idx):
+        """Carga la configuración de un nivel"""
+        nivel = self.gestor_niveles.obtener_nivel(idx)
+        
+        # Configurar tablero
+        radio = nivel.get("radio_tablero", 4)
+        self.tablero = TableroHexagonal(radio)
+        
+        # Reiniciar agente con nuevo tablero
+        self.agente = AgenteHex(self.tablero)
+        
+        # Configurar costos
+        if nivel.get("costos") == "uniformes":
+            for celda in self.tablero.celdas.values():
+                celda.costo = 1
+        else:
+            self.tablero.asignar_costos_aleatorios()
+        
+        # Energía (batería)
+        self.energia_total = nivel.get("energia_inicial", 20)
+        self.energia_restante = self.energia_total
+        self.bateria_infinita = nivel.get("bateria_infinita", False)
+        
+        # Meta según nivel
+        meta_coords = nivel.get("meta", [3, -3])
+        self.meta = tuple(meta_coords)
+        
+        # Reiniciar estados
+        self.emocion_seleccionada = None
+        self.resultado = None
+        self.resultado_elegido = None
+        self.estadisticas = None
+        self.estadisticas_elegidas = None
+        self.mostrar_menu_emociones = True
+        self.estado = "SELECCION_EMOCION"
+        
+        print(f"📖 Nivel {idx}: {nivel['nombre']}")
+        print(f"🔋 Batería: {self.energia_total}" + (" (INFINITA)" if self.bateria_infinita else ""))
+
+    # ── Menú de emociones ───────────────────────────────────────────────────
+
+    def dibujar_menu_emociones(self):
+        """Dibuja el menú para seleccionar emoción"""
+        x_centro = ANCHO // 2
+        y_base = 150
+        
+        # Fondo semitransparente
+        fondo = pygame.Surface((500, 350), pygame.SRCALPHA)
+        fondo.fill((0, 0, 0, 220))
+        self.pantalla.blit(fondo, (x_centro - 250, y_base - 30))
+        
+        # Título
+        titulo = self.fuente_grande.render("¿CÓMO TE SIENTES HOY?", True, (255, 255, 100))
+        self.pantalla.blit(titulo, (x_centro - titulo.get_width() // 2, y_base - 20))
+        
+        # Subtítulo
+        sub = self.fuente_sm.render("(Presiona V para hablar o haz clic en una emoción)", True, (200, 200, 200))
+        self.pantalla.blit(sub, (x_centro - sub.get_width() // 2, y_base + 10))
+        
+        # Botones de emociones
+        self.botones_menu = []
+        emociones = [
+            ("tristeza", "Tristeza", (0, 0, 255)),
+            ("miedo", "Miedo", (128, 0, 128)),
+            ("enojo", "Enojo", (255, 0, 0)),
+            ("alegria", "Alegría", (255, 255, 0)),
+            ("ansiedad", "Ansiedad", (0, 255, 0))
+        ]
+        
+        for i, (key, nombre, color) in enumerate(emociones):
+            y_boton = y_base + 70 + i * 45
+            rect = pygame.Rect(x_centro - 150, y_boton, 300, 35)
+            
+            pygame.draw.rect(self.pantalla, color, rect)
+            pygame.draw.rect(self.pantalla, (255, 255, 255), rect, 2)
+            
+            texto = f"{i+1}. {nombre} → Planeta {PLANETAS[key]}"
+            sf = self.fuente_md.render(texto, True, (255, 255, 255))
+            self.pantalla.blit(sf, (x_centro - 140, y_boton + 5))
+            
+            self.botones_menu.append({'rect': rect, 'emocion': key})
+        
+        # Instrucción voz
+        voz_texto = "🎤 O presiona V y di: 'Estoy triste', 'Tengo miedo', etc."
+        sf_voz = self.fuente_sm.render(voz_texto, True, (150, 255, 150))
+        self.pantalla.blit(sf_voz, (x_centro - sf_voz.get_width() // 2, y_base + 320))
+
+    # ── Manejo de selección ─────────────────────────────────────────────────
+
+    def seleccionar_emocion(self, emocion):
+        """Procesa la emoción seleccionada"""
+        self.emocion_seleccionada = emocion
+        
+        # Usar la meta del nivel actual
+        nivel = self.gestor_niveles.obtener_nivel()
+        meta_coords = nivel.get("meta", [3, -3])
+        self.meta = tuple(meta_coords)
+        
+        planeta = PLANETAS[emocion]
+        print(f"🎯 Emoción: {emocion} → Planeta {planeta} en {self.meta}")
+        
+        self.voz.hablar(f"Tenemos que ir al planeta {planeta}")
+        
+        self.estado = "BUSCANDO"
+        self.mostrar_menu_emociones = False
+        self.estadisticas = None
+        self.estadisticas_elegidas = None
+        self.resultado_elegido = None
+        
+        # Restaurar energía
+        self.energia_restante = self.energia_total
+        
+        pygame.time.wait(1500)
+        self.voz.hablar("Elige una nave: B, D o U")
+
+    # ── Búsqueda ───────────────────────────────────────────────────────────
 
     def _iniciar_busqueda_paso_a_paso(self, tecnica: str):
-        """Inicia una búsqueda que se ejecutará paso a paso."""
+        """Inicia una búsqueda paso a paso"""
+        # Verificar batería
+        if not self.bateria_infinita and self.energia_restante <= 0:
+            self.mostrar_mensaje("¡Sin batería! Presiona N para siguiente nivel", (255, 0, 0))
+            return
+        
         self.busqueda_activa = True
         self.generador_busqueda = self.agente.buscar_paso_a_paso(self.inicio, self.meta, tecnica)
         self.contador_pasos = 0
         self.ultimo_tiempo = pygame.time.get_ticks()
-        
-        # Limpiar resultado anterior pero mantener visualización
         self.resultado = None
-        print(f"🔍 Iniciando búsqueda {tecnica} paso a paso...")
+        self.estadisticas = None
+        self.mostrar_boton_elegir = False
+        
+        nombres = {'anchura': 'Exploradora', 'profundidad': 'Aventurera', 'costouniforme': 'Estratega'}
+        print(f"🚀 Iniciando {nombres[tecnica]}...")
+        self.voz.hablar(f"Usando nave {nombres[tecnica]}")
 
-    # Avanzar un paso en la búsqueda
     def _avanzar_busqueda(self):
-        """Ejecuta un paso de la búsqueda y actualiza visualización."""
+        """Ejecuta un paso de la búsqueda"""
         if not self.busqueda_activa or not self.generador_busqueda:
             return
         
@@ -125,199 +286,312 @@ class Juego:
                 self.busqueda_activa = False
                 self.generador_busqueda = None
                 
+                pasos_totales = self.contador_pasos
+                casillas_camino = len(camino_final)
+                energia_gastada = casillas_camino - 1
+                
+                self.estadisticas = {
+                    'pasos_totales': pasos_totales,
+                    'casillas_camino': casillas_camino,
+                    'energia_gastada': energia_gastada,
+                    'energia_restante': self.energia_restante - energia_gastada if not self.bateria_infinita else self.energia_restante,
+                    'tecnica': self.resultado.get('tecnica', 'anchura')
+                }
+                
                 self.resultado = self.agente._preparar_resultado_parcial(camino_final)
-                self.resultado['en_progreso'] = False
                 self.resultado['camino_set'] = set(camino_final)
-                print(f"✅ Búsqueda completada en {self.contador_pasos} pasos")
+                
+                print(f"✅ Búsqueda completada! Energía a gastar: {energia_gastada}")
+                self.mostrar_boton_elegir = True
                 
             elif estado == 'NO_ENCONTRADO':
                 self.busqueda_activa = False
                 self.generador_busqueda = None
-                print("❌ No se encontró camino")
+                self.mostrar_mensaje("No se encontró camino. Prueba otra nave.", (255, 100, 0))
                 
         except StopIteration:
             self.busqueda_activa = False
             self.generador_busqueda = None
 
-    def hex_a_pantalla(self, q, r):
-        """Axial (q,r) → píxeles (x,y). Flat-top."""
-        s = RADIO_HEX * self.zoom
-        x = self.offset_x + s * 1.5 * q
-        y = self.offset_y + s * math.sqrt(3) * (r + q / 2.0)
-        return int(x), int(y)
+    def elegir_nave_actual(self):
+        """Elige la nave actual como definitiva"""
+        if not self.estadisticas:
+            return
+        
+        energia_gastada = self.estadisticas['energia_gastada']
+        
+        # Verificar si tiene suficiente batería
+        if not self.bateria_infinita and energia_gastada > self.energia_restante:
+            self.mostrar_mensaje("¡No tienes suficiente batería para esta ruta!", (255, 0, 0))
+            self.voz.hablar("No tienes suficiente batería. Prueba otra nave.")
+            return
+        
+        # Guardar resultado elegido
+        self.resultado_elegido = self.resultado
+        self.estadisticas_elegidas = self.estadisticas.copy()
+        
+        # Restar energía
+        if not self.bateria_infinita:
+            self.energia_restante -= energia_gastada
+        
+        self.mostrar_boton_elegir = False
+        
+        # Verificar si llegó a la meta
+        if self.energia_restante >= 0:
+            nivel = self.gestor_niveles.obtener_nivel()
+            if "victoria" in nivel["mensajes"]:
+                self.mostrar_mensaje(nivel["mensajes"]["victoria"], (0, 255, 0))
+            else:
+                self.mostrar_mensaje("¡Llegamos al planeta!", (0, 255, 0))
+            self.voz.hablar("¡Llegamos al planeta!")
+            self.estado = "COMPLETADO"
+        else:
+            self.estado = "GAME_OVER"
+            nivel = self.gestor_niveles.obtener_nivel()
+            self.mostrar_mensaje(nivel["mensajes"]["derrota"], (255, 0, 0))
 
-    def pantalla_a_hex(self, px, py):
-        """
-        Píxeles (px,py) → coordenada axial (q,r) más cercana.
-        Usa redondeo de coordenadas cúbicas.
-        """
-        s  = RADIO_HEX * self.zoom
-        q  = (px - self.offset_x) / (s * 1.5)
-        r  = (py - self.offset_y) / (s * math.sqrt(3)) - q / 2.0
-
-        x_c, z_c = q, r
-        y_c = -x_c - z_c
-        rx, ry, rz = round(x_c), round(y_c), round(z_c)
-        dx, dy, dz = abs(rx - x_c), abs(ry - y_c), abs(rz - z_c)
-        if dx > dy and dx > dz:
-            rx = -ry - rz
-        elif dy > dz:
-            ry = -rx - rz
-        return (rx, rz)
-
-    # ── Dibujo ────────────────────────────────────────────────────────────────
-
-    def _vertices_hex(self, x, y):
-        s = RADIO_HEX * self.zoom
-        return [
-            (x + s * math.cos(math.radians(60 * i)),
-             y + s * math.sin(math.radians(60 * i)))
-            for i in range(6)
-        ]
-
-    def _dibujar_hex(self, x, y, relleno, borde=(200, 200, 200), grosor=1):
-        pts = self._vertices_hex(x, y)
-        pygame.draw.polygon(self.pantalla, relleno, pts)
-        pygame.draw.polygon(self.pantalla, borde,   pts, grosor)
+    # ── Dibujo ─────────────────────────────────────────────────────────────
 
     def _color_celda(self, q, r):
-        """Color de relleno según el estado de la búsqueda."""
+        """Color según estado de búsqueda"""
         pos = (q, r)
+        
         if pos == self.inicio:
             return COLOR_INICIO
         if pos == self.meta:
             return COLOR_META
 
-        if self.resultado is None:
+        resultado_actual = self.resultado_elegido if self.resultado_elegido else self.resultado
+        
+        if not resultado_actual:
             return COLOR_NORMAL
 
-        tecnica    = self.resultado['tecnica']
-        en_camino  = self.resultado['camino_set']
-        explorados = self.resultado['explorados']
-
-        if pos in en_camino:
+        if 'camino_set' in resultado_actual and pos in resultado_actual['camino_set']:
             return COLOR_CAMINO
 
+        explorados = resultado_actual.get('explorados', [])
         if pos not in explorados:
             return COLOR_NORMAL
 
         idx = explorados.index(pos)
-        t   = idx / max(len(explorados) - 1, 1)
+        t = idx / max(len(explorados) - 1, 1)
+        tecnica = resultado_actual.get('tecnica', 'anchura')
 
         if tecnica == 'anchura':
-            nivel_max = max(self.resultado['nivel_bfs'].values(), default=1)
-            nivel     = self.resultado['nivel_bfs'].get(pos, 0)
-            return _lerp_color(COLOR_BFS_LO, COLOR_BFS_HI,
-                               nivel / max(nivel_max, 1))
+            nivel_max = max(resultado_actual.get('nivel_bfs', {0:1}).values(), default=1)
+            nivel = resultado_actual.get('nivel_bfs', {}).get(pos, 0)
+            return _lerp_color(COLOR_BFS_LO, COLOR_BFS_HI, nivel / max(nivel_max, 1))
         elif tecnica == 'profundidad':
             return _lerp_color(COLOR_DFS_LO, COLOR_DFS_HI, t)
         elif tecnica == 'costouniforme':
-            costos   = self.resultado['costo_acumulado']
+            costos = resultado_actual.get('costo_acumulado', {})
             costo_mx = max(costos.values(), default=1)
-            return _lerp_color(COLOR_UCS_LO, COLOR_UCS_HI,
-                               costos.get(pos, 0) / max(costo_mx, 1))
+            return _lerp_color(COLOR_UCS_LO, COLOR_UCS_HI, costos.get(pos, 0) / max(costo_mx, 1))
+        
         return COLOR_NORMAL
 
-    def _borde_celda(self, celda):
-        """Para UCS, borde coloreado y más grueso en celdas caras."""
-        if (self.resultado and
-                self.resultado['tecnica'] == 'costouniforme' and
-                celda.costo > 1):
-            t = (celda.costo - 1) / 2.0
-            color  = _lerp_color((180, 180, 180), (255, 80, 0), t)
-            grosor = celda.costo
-            return color, grosor
-        return (200, 200, 200), 1
+    def _dibujar_camino_lineas(self):
+        """Dibuja el camino final"""
+        resultado_actual = self.resultado_elegido if self.resultado_elegido else self.resultado
+        if not resultado_actual or len(resultado_actual.get('camino_lista', [])) < 2:
+            return
+        
+        puntos = [self.hex_a_pantalla(*p) for p in resultado_actual['camino_lista']]
+        for i in range(len(puntos) - 1):
+            pygame.draw.line(self.pantalla, (255, 255, 60), puntos[i], puntos[i + 1], 3)
 
     def dibujar_tablero(self):
+        """Dibuja el tablero"""
         for (q, r), celda in self.tablero.celdas.items():
-            x, y   = self.hex_a_pantalla(q, r)
-            relleno = self._color_celda(q, r)
-            borde, grosor = self._borde_celda(celda)
-            self._dibujar_hex(x, y, relleno, borde, grosor)
+            x, y = self.hex_a_pantalla(q, r)
+            color = self._color_celda(q, r)
+            self._dibujar_hex(x, y, color)
+            
+            # Dibujar planeta si es meta
+            if (q, r) == self.meta:
+                for emocion, pos in POSICIONES_PLANETAS.items():
+                    if pos == self.meta:
+                        pygame.draw.circle(self.pantalla, COLOR_EMOCIONES[emocion], (x, y), 12)
+                        pygame.draw.circle(self.pantalla, (255, 255, 255), (x, y), 12, 2)
+                        letra = PLANETAS[emocion][0]
+                        sf = self.fuente_sm.render(letra, True, (255, 255, 255))
+                        self.pantalla.blit(sf, (x - 5, y - 8))
+                        break
 
-            # Coordenadas pequeñas
-            txt = self.fuente_sm.render(f"{q},{r}", True, (150, 150, 190))
-            self.pantalla.blit(txt, (x - 18, y - 8))
+    def _dibujar_hex(self, x, y, relleno, borde=(200, 200, 200), grosor=1):
+        pts = []
+        s = RADIO_HEX * self.zoom
+        for i in range(6):
+            angulo = math.radians(60 * i)
+            pts.append((x + s * math.cos(angulo), y + s * math.sin(angulo)))
+        pygame.draw.polygon(self.pantalla, relleno, pts)
+        pygame.draw.polygon(self.pantalla, borde, pts, grosor)
 
-    def _dibujar_camino_lineas(self):
-        """Traza el camino encontrado con líneas entre centros."""
-        if not self.resultado or len(self.resultado['camino_lista']) < 2:
-            return
-        puntos = [self.hex_a_pantalla(*p) for p in self.resultado['camino_lista']]
-        for i in range(len(puntos) - 1):
-            pygame.draw.line(self.pantalla, (255, 255, 60),
-                             puntos[i], puntos[i + 1], 3)
-        for p in puntos:
-            pygame.draw.circle(self.pantalla, (255, 255, 0), p, 4)
+    def hex_a_pantalla(self, q, r):
+        """Coordenadas axiales a píxeles"""
+        s = RADIO_HEX * self.zoom
+        x = self.offset_x + s * 1.5 * q
+        y = self.offset_y + s * math.sqrt(3) * (r + q / 2.0)
+        return int(x), int(y)
+
+    # ── HUD ────────────────────────────────────────────────────────────────
 
     def _dibujar_hud(self):
-        # Instrucciones (izquierda)
-        y = 10
-        for linea in self.instrucciones:
-            sf = self.fuente_sm.render(linea, True, (170, 170, 210))
-            self.pantalla.blit(sf, (10, y))
-            y += 18
+        """Dibuja toda la interfaz"""
+        nivel = self.gestor_niveles.obtener_nivel()
+        
+        # Panel superior izquierdo - Nivel
+        pygame.draw.rect(self.pantalla, (0, 0, 0, 160), (10, 10, 300, 90))
+        pygame.draw.rect(self.pantalla, (100, 100, 100), (10, 10, 300, 90), 2)
+        
+        texto_nivel = f"NIVEL {nivel['id']}: {nivel['nombre']}"
+        sf_nivel = self.fuente_md.render(texto_nivel, True, (255, 255, 150))
+        self.pantalla.blit(sf_nivel, (20, 15))
+        
+        texto_inicio = f"🚀 Inicio: {self.inicio}"
+        sf_inicio = self.fuente_sm.render(texto_inicio, True, (150, 255, 150))
+        self.pantalla.blit(sf_inicio, (20, 45))
+        
+        if self.emocion_seleccionada:
+            planeta = PLANETAS[self.emocion_seleccionada]
+            texto_meta = f"🎯 Destino: Planeta {planeta} {self.meta}"
+        else:
+            texto_meta = f"🎯 Destino: {self.meta}"
+        sf_meta = self.fuente_sm.render(texto_meta, True, (255, 150, 150))
+        self.pantalla.blit(sf_meta, (20, 65))
+        
+        # Batería
+        self._dibujar_bateria()
+        
+        # Botón siguiente nivel (si completado)
+        if self.estado == "COMPLETADO" and nivel['id'] < len(self.gestor_niveles.niveles) - 1:
+            self.boton_siguiente_rect = pygame.Rect(ANCHO - 200, 20, 180, 40)
+            pygame.draw.rect(self.pantalla, (0, 150, 0), self.boton_siguiente_rect)
+            pygame.draw.rect(self.pantalla, (255, 255, 255), self.boton_siguiente_rect, 2)
+            sf_sig = self.fuente_md.render("➡️ SIGUIENTE", True, (255, 255, 255))
+            self.pantalla.blit(sf_sig, (ANCHO - 180, 30))
 
-        # Panel de métricas (derecha) si hay resultado
-        if self.resultado:
-            m       = self.resultado['metricas']
-            nombres = {'anchura': 'BFS', 'profundidad': 'DFS',
-                       'costouniforme': 'Costo Uniforme'}
-            nombre  = nombres.get(self.resultado['tecnica'], '?')
-            lineas  = [
-                f"[ {nombre} ]",
-                f"Pasos      : {m.get('pasos', '—')}",
-                f"Costo      : {m.get('costo', '—')}",
-                f"Expandidos : {m.get('nodos_expandidos', '—')}",
-                f"Tiempo     : {m.get('tiempo', 0):.4f} s",
-            ]
-            bx, by = ANCHO - 230, 10
-            fondo  = pygame.Surface((220, len(lineas) * 22 + 10), pygame.SRCALPHA)
-            fondo.fill((10, 10, 30, 190))
-            self.pantalla.blit(fondo, (bx - 5, by - 5))
-            for i, linea in enumerate(lineas):
-                color = (255, 220, 60) if i == 0 else (210, 210, 255)
-                sf    = self.fuente_md.render(linea, True, color)
-                self.pantalla.blit(sf, (bx, by))
-                by += 22
+    def _dibujar_bateria(self):
+        """Dibuja el indicador de batería"""
+        x = ANCHO - 250
+        y = 20
+        ancho = 200
+        alto = 30
+        
+        pygame.draw.rect(self.pantalla, (0, 0, 0, 160), (x-5, y-5, ancho+10, alto+10))
+        pygame.draw.rect(self.pantalla, (100, 100, 100), (x, y, ancho, alto), 2)
+        
+        if self.bateria_infinita:
+            texto = "🔋 BATERÍA: ∞ INFINITA"
+            sf = self.fuente_md.render(texto, True, (0, 255, 255))
+            self.pantalla.blit(sf, (x + 10, y + 5))
+        else:
+            porcentaje = self.energia_restante / self.energia_total
+            ancho_lleno = int(ancho * porcentaje)
+            
+            if porcentaje > 0.6:
+                color = (0, 255, 0)
+            elif porcentaje > 0.3:
+                color = (255, 255, 0)
+            else:
+                color = (255, 0, 0)
+            
+            pygame.draw.rect(self.pantalla, color, (x, y, ancho_lleno, alto))
+            texto = f"🔋 {self.energia_restante}/{self.energia_total}"
+            sf = self.fuente_md.render(texto, True, (255, 255, 255))
+            self.pantalla.blit(sf, (x + ancho + 10, y + 5))
 
-        # Posiciones actuales (pie de pantalla)
-        info = f"INICIO {self.inicio}     META {self.meta}"
-        sf   = self.fuente_sm.render(info, True, (150, 255, 150))
-        self.pantalla.blit(sf, (ANCHO // 2 - sf.get_width() // 2, ALTO - 22))
+    def _dibujar_hud_inferior(self):
+        """Opciones de búsqueda"""
+        y_base = ALTO - 80
+        x_centro = ANCHO // 2
+        
+        pygame.draw.rect(self.pantalla, (0, 0, 0, 180), (x_centro - 300, y_base, 600, 60))
+        pygame.draw.rect(self.pantalla, (100, 100, 100), (x_centro - 300, y_base, 600, 60), 2)
+        
+        titulo = self.fuente_md.render("🚀 PRUEBA NAVES:", True, (255, 255, 255))
+        self.pantalla.blit(titulo, (x_centro - titulo.get_width() // 2, y_base - 25))
+        
+        for i, (tecla, nombre, desc, color) in enumerate(self.opciones_busqueda):
+            x = x_centro - 200 + i * 200
+            pygame.draw.circle(self.pantalla, color, (x, y_base + 30), 15)
+            pygame.draw.circle(self.pantalla, (255, 255, 255), (x, y_base + 30), 15, 2)
+            
+            sf_tecla = self.fuente_md.render(f"[{tecla}]", True, (255, 255, 100))
+            self.pantalla.blit(sf_tecla, (x + 25, y_base + 15))
 
-        # Leyenda de colores (esquina inferior derecha)
-        leyenda = [
-            (COLOR_INICIO, "INICIO  (clic izq)"),
-            (COLOR_META,   "META    (clic der)"),
-            (COLOR_CAMINO, "Camino"),
-            (COLOR_BFS_HI, "BFS  explorado"),
-            (COLOR_DFS_HI, "DFS  explorado"),
-            (COLOR_UCS_HI, "UCS  explorado"),
+    def _dibujar_boton_elegir(self):
+        """Botón para elegir nave"""
+        if not self.mostrar_boton_elegir or not self.estadisticas:
+            return
+        
+        x_centro = ANCHO // 2
+        y_base = ALTO - 150
+        ancho = 400
+        alto = 60
+        
+        rect = pygame.Rect(x_centro - ancho // 2, y_base, ancho, alto)
+        self.boton_elegir_rect = rect
+        
+        pygame.draw.rect(self.pantalla, (0, 150, 0), rect)
+        pygame.draw.rect(self.pantalla, (255, 255, 255), rect, 3)
+        
+        texto = f"✨ ¡ESCOJO ESTA NAVE! (Gasta {self.estadisticas['energia_gastada']}⚡) ✨"
+        sf = self.fuente_md.render(texto, True, (255, 255, 255))
+        self.pantalla.blit(sf, (x_centro - sf.get_width() // 2, y_base + 20))
+
+    def _dibujar_estadisticas(self):
+        """Estadísticas de la nave elegida"""
+        if not self.estadisticas_elegidas:
+            return
+        
+        x = ANCHO - 320
+        y = 100
+        ancho = 300
+        alto = 130
+        
+        pygame.draw.rect(self.pantalla, (0, 40, 0, 200), (x, y, ancho, alto))
+        pygame.draw.rect(self.pantalla, (0, 255, 0), (x, y, ancho, alto), 2)
+        
+        nombres = {'anchura': 'EXPLORADORA', 'profundidad': 'AVENTURERA', 'costouniforme': 'ESTRATEGA'}
+        titulo = f"✨ NAVE {nombres[self.estadisticas_elegidas['tecnica']]} ✨"
+        sf_titulo = self.fuente_sm.render(titulo, True, (255, 255, 100))
+        self.pantalla.blit(sf_titulo, (x + 10, y + 5))
+        
+        lineas = [
+            f"📊 Pasos: {self.estadisticas_elegidas['pasos_totales']}",
+            f"🛤️  Camino: {self.estadisticas_elegidas['casillas_camino']} casillas",
+            f"⚡ Gasto: {self.estadisticas_elegidas['energia_gastada']}",
+            f"🔋 Restante: {self.energia_restante}"
         ]
-        ly = ALTO - len(leyenda) * 20 - 14
-        for color, etiqueta in leyenda:
-            pygame.draw.rect(self.pantalla, color, (ANCHO - 168, ly, 13, 13))
-            sf = self.fuente_sm.render(etiqueta, True, (200, 200, 200))
-            self.pantalla.blit(sf, (ANCHO - 152, ly))
-            ly += 20
+        
+        for i, linea in enumerate(lineas):
+            sf = self.fuente_sm.render(linea, True, (255, 255, 255))
+            self.pantalla.blit(sf, (x + 20, y + 35 + i * 20))
 
-    # ── Búsquedas ─────────────────────────────────────────────────────────────
+    def mostrar_mensaje(self, texto, color):
+        """Muestra un mensaje temporal"""
+        self.mensaje_estado = texto
+        self.color_mensaje = color
+        self.tiempo_mensaje = pygame.time.get_ticks()
 
-    def _ejecutar_busqueda(self, tecnica: str):
-        camino = self.agente.buscar(self.inicio, self.meta, tecnica)
-        self.resultado = {
-            'tecnica'        : tecnica,
-            'camino_set'     : set(camino),
-            'camino_lista'   : camino,
-            'explorados'     : self.agente.explorados,
-            'nivel_bfs'      : dict(self.agente.nivel_bfs),
-            'costo_acumulado': dict(self.agente.costo_acumulado),
-            'metricas'       : dict(self.agente.metricas),
-        }
+    def _dibujar_mensaje(self):
+        """Dibuja mensaje temporal"""
+        if not self.mensaje_estado or pygame.time.get_ticks() - self.tiempo_mensaje > 3000:
+            return
+        
+        x_centro = ANCHO // 2
+        y_base = 200
+        
+        fondo = pygame.Surface((600, 50), pygame.SRCALPHA)
+        fondo.fill((*self.color_mensaje[:3], 200))
+        self.pantalla.blit(fondo, (x_centro - 300, y_base))
+        pygame.draw.rect(self.pantalla, (255, 255, 255), (x_centro - 300, y_base, 600, 50), 2)
+        
+        sf = self.fuente_md.render(self.mensaje_estado, True, (255, 255, 255))
+        self.pantalla.blit(sf, (x_centro - sf.get_width() // 2, y_base + 15))
 
-    # ── Eventos ───────────────────────────────────────────────────────────────
+    # ── Eventos ────────────────────────────────────────────────────────────
 
     def manejar_eventos(self):
         for evento in pygame.event.get():
@@ -336,60 +610,100 @@ class Juego:
                     self.offset_y += 50
                 elif k == pygame.K_DOWN:
                     self.offset_y -= 50
-                elif k in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
+                elif k in (pygame.K_EQUALS, pygame.K_PLUS):
                     self.zoom *= 1.2
-                elif k in (pygame.K_MINUS, pygame.K_KP_MINUS):
+                elif k == pygame.K_MINUS:
                     self.zoom = max(0.3, self.zoom / 1.2)
-                elif k == pygame.K_b:
-                    self._iniciar_busqueda_paso_a_paso('anchura')
-                elif k == pygame.K_d:
-                    self._iniciar_busqueda_paso_a_paso('profundidad')
-                elif k == pygame.K_u:
-                    self._iniciar_busqueda_paso_a_paso('costouniforme')
-                elif k == pygame.K_v:
-                    self.activar_voz()
-                elif k == pygame.K_c:
-                    self.resultado = None
-                    self.busqueda_activa = False
-                    self.generador_busqueda = None
-                    print("🧹 Visualización limpiada")
                 elif k == pygame.K_SPACE:
                     self.busqueda_activa = not self.busqueda_activa
-                    estado = "REANUDADA" if self.busqueda_activa else "PAUSADA"
-                    print(f"⏸️ Búsqueda {estado}")
                 elif k == pygame.K_r:
                     self.velocidad_busqueda = max(1, self.velocidad_busqueda - 2)
-                    print(f"🐢 Velocidad: {self.velocidad_busqueda} pasos/s")
                 elif k == pygame.K_f:
                     self.velocidad_busqueda = min(30, self.velocidad_busqueda + 2)
-                    print(f"🐇 Velocidad: {self.velocidad_busqueda} pasos/s")
+                elif k == pygame.K_v and self.estado == "SELECCION_EMOCION":
+                    self.activar_voz()
+                elif k == pygame.K_n:
+                    if self.gestor_niveles.siguiente_nivel():
+                        self.cargar_nivel(self.gestor_niveles.nivel_actual)
+                
+                # Teclas de búsqueda
+                elif self.estado in ["BUSCANDO", "COMPLETADO"]:
+                    if k == pygame.K_b:
+                        self._iniciar_busqueda_paso_a_paso('anchura')
+                    elif k == pygame.K_d:
+                        self._iniciar_busqueda_paso_a_paso('profundidad')
+                    elif k == pygame.K_u:
+                        self._iniciar_busqueda_paso_a_paso('costouniforme')
+                
+                # Teclas numéricas para emociones
+                elif self.estado == "SELECCION_EMOCION":
+                    if k == pygame.K_1:
+                        self.seleccionar_emocion("tristeza")
+                    elif k == pygame.K_2:
+                        self.seleccionar_emocion("miedo")
+                    elif k == pygame.K_3:
+                        self.seleccionar_emocion("enojo")
+                    elif k == pygame.K_4:
+                        self.seleccionar_emocion("alegria")
+                    elif k == pygame.K_5:
+                        self.seleccionar_emocion("ansiedad")
 
             elif evento.type == pygame.MOUSEBUTTONDOWN:
-                if self.busqueda_activa:
-                    print("⏸️ Búsqueda pausada para mover posición")
-                    self.busqueda_activa = False
+                # Clic en menú de emociones
+                if self.estado == "SELECCION_EMOCION" and self.botones_menu:
+                    for boton in self.botones_menu:
+                        if boton['rect'].collidepoint(evento.pos):
+                            self.seleccionar_emocion(boton['emocion'])
+                            break
                 
-                q, r = self.pantalla_a_hex(*evento.pos)
-                if (q, r) in self.tablero.celdas:
-                    if evento.button == 1:
-                        self.inicio = (q, r)
-                        self.resultado = None
-                        print(f"🟢 INICIO → {self.inicio}")
-                    elif evento.button == 3:
-                        self.meta = (q, r)
-                        self.resultado = None
-                        print(f"🔴 META   → {self.meta}")
+                # Clic en botón elegir
+                if self.mostrar_boton_elegir and self.boton_elegir_rect:
+                    if self.boton_elegir_rect.collidepoint(evento.pos):
+                        self.elegir_nave_actual()
+                
+                # Clic en botón siguiente nivel
+                if hasattr(self, 'boton_siguiente_rect') and self.boton_siguiente_rect:
+                    if self.boton_siguiente_rect.collidepoint(evento.pos):
+                        if self.gestor_niveles.siguiente_nivel():
+                            self.cargar_nivel(self.gestor_niveles.nivel_actual)
 
         return True
 
-    # ── Bucle principal ───────────────────────────────────────────────────────
+    # ── Voz ────────────────────────────────────────────────────────────────
+
+    def activar_voz(self):
+        """Reconocimiento de voz"""
+        if self.estado != "SELECCION_EMOCION":
+            return
+        
+        self.voz.hablar("¿Cómo te sientes hoy?")
+        pygame.time.wait(2000)
+        
+        texto = self.voz.escuchar()
+        if not texto:
+            self.voz.hablar("No te escuché bien. Intenta de nuevo.")
+            return
+        
+        if "triste" in texto:
+            self.seleccionar_emocion("tristeza")
+        elif "miedo" in texto:
+            self.seleccionar_emocion("miedo")
+        elif "enojado" in texto:
+            self.seleccionar_emocion("enojo")
+        elif "alegre" in texto:
+            self.seleccionar_emocion("alegria")
+        elif "ansioso" in texto:
+            self.seleccionar_emocion("ansiedad")
+        else:
+            self.voz.hablar("No reconozco esa emoción. Intenta de nuevo.")
+
+    # ── Bucle principal ────────────────────────────────────────────────────
 
     def ejecutar(self):
         ejecutando = True
         while ejecutando:
             tiempo_actual = pygame.time.get_ticks()
             
-            # Control de velocidad de búsqueda
             if self.busqueda_activa and self.generador_busqueda:
                 paso_ms = 1000 // self.velocidad_busqueda
                 if tiempo_actual - self.ultimo_tiempo >= paso_ms:
@@ -397,93 +711,29 @@ class Juego:
                     self.ultimo_tiempo = tiempo_actual
             
             ejecutando = self.manejar_eventos()
+            
+            # Dibujar
             self.pantalla.fill(COLOR_FONDO)
             self.dibujar_tablero()
             self._dibujar_camino_lineas()
-            self._dibujar_hud_paso_a_paso()  # Nueva función
+            
+            if self.estado == "SELECCION_EMOCION":
+                self.dibujar_menu_emociones()
+            
+            if self.estado in ["BUSCANDO", "COMPLETADO"]:
+                self._dibujar_hud_inferior()
+            
+            self._dibujar_boton_elegir()
+            self._dibujar_estadisticas()
             self._dibujar_hud()
+            self._dibujar_mensaje()
+            
             pygame.display.flip()
             self.reloj.tick(60)
         
         pygame.quit()
         sys.exit()
 
-    def _dibujar_hud_paso_a_paso(self):
-        """Muestra información de la búsqueda en progreso."""
-        if self.busqueda_activa or (self.resultado and self.resultado.get('en_progreso')):
-            # Barra de progreso
-            y_base = 80
-            ancho_barra = 300
-            alto_barra = 20
-            x_barra = 10
-            
-            # Fondo de la barra
-            pygame.draw.rect(self.pantalla, (50, 50, 50), (x_barra, y_base, ancho_barra, alto_barra))
-            
-            # Progreso (aproximado)
-            if hasattr(self.agente, 'explorados'):
-                total_celdas = len(self.tablero.celdas)
-                progreso = min(1.0, len(self.agente.explorados) / total_celdas)
-                ancho_progreso = int(ancho_barra * progreso)
-                pygame.draw.rect(self.pantalla, (0, 200, 0), (x_barra, y_base, ancho_progreso, alto_barra))
-            
-            # Texto de estado
-            estado = "▶️ EN PROGRESO" if self.busqueda_activa else "⏸️ PAUSADA"
-            if self.resultado and self.resultado.get('en_progreso'):
-                texto = f"{estado} - Paso {self.contador_pasos}"
-            else:
-                texto = f"{estado}"
-            
-            sf = self.fuente_sm.render(texto, True, (255, 255, 100))
-            self.pantalla.blit(sf, (x_barra, y_base - 20))
-            
-            # Velocidad
-            vel_texto = f"Vel: {self.velocidad_busqueda} pasos/s (R/F)"
-            sf_vel = self.fuente_sm.render(vel_texto, True, (180, 180, 180))
-            self.pantalla.blit(sf_vel, (x_barra + ancho_barra + 20, y_base))
-
-    def activar_voz(self):
-        """Activa interacción por voz sin interferencia TTS-STT."""
-        print("🎤 Activando control por voz...")
-
-        # Pausar búsqueda si estaba activa
-        if self.busqueda_activa:
-            self.busqueda_activa = False
-
-        # Habla y espera a que termine
-        self.voz.hablar_y_esperar("Hola. ¿Cómo te sientes hoy?")
-
-        # Ahora sí escucha
-        texto = self.voz.escuchar()
-
-        if not texto:
-            self.voz.hablar("No pude escucharte bien. Intenta nuevamente.")
-            return
-
-        emocion = self.voz.detectar_emocion(texto)
-
-        if emocion == "tristeza":
-            self.voz.hablar("Vamos a buscar la zona de juego para ayudarte.")
-            self._iniciar_busqueda_paso_a_paso('anchura')
-
-        elif emocion == "miedo":
-            self.voz.hablar("Busquemos un lugar tranquilo.")
-            self._iniciar_busqueda_paso_a_paso('costouniforme')
-
-        elif emocion == "enojo":
-            self.voz.hablar("Te ayudaré a encontrar un abrazo.")
-            self._iniciar_busqueda_paso_a_paso('profundidad')
-
-        elif emocion == "alegria":
-            self.voz.hablar("¡Qué bueno! Vamos a explorar.")
-            self._iniciar_busqueda_paso_a_paso('anchura')
-
-        elif emocion == "ansiedad":
-            self.voz.hablar("Respiremos y busquemos un camino tranquilo.")
-            self._iniciar_busqueda_paso_a_paso('costouniforme')
-
-        else:
-            self.voz.hablar("No entendí bien la emoción. ¿Puedes repetirlo?")
 
 if __name__ == "__main__":
     juego = Juego()
