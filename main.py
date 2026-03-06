@@ -347,33 +347,30 @@ class Juego:
                 self.busqueda_activa = False
                 self.generador_busqueda = None
                 
+                # 🔴 IMPORTANTE: Primero actualizar self.resultado con el camino final
+                self.resultado = self.agente._preparar_resultado_parcial(camino_final)
+                self.resultado['camino_set'] = set(camino_final)
+                self.resultado['camino_lista'] = camino_final
+                
+                # Calcular estadísticas
                 pasos_totales = self.contador_pasos
                 casillas_camino = len(camino_final)
                 energia_gastada = casillas_camino - 1
                 
-                # Verificar si hay suficiente batería
-                if not self.bateria_infinita and energia_gastada > self.energia_restante:
-                    self.voz.hablar("No tenemos suficiente batería para esta ruta. Prueba otra nave.")
-                    self.mostrar_boton_elegir = False
-                    return
-                
+                # Guardar estadísticas
                 self.estadisticas = {
                     'pasos_totales': pasos_totales,
                     'casillas_camino': casillas_camino,
                     'energia_gastada': energia_gastada,
                     'energia_restante': self.energia_restante - energia_gastada if not self.bateria_infinita else self.energia_restante,
-                    'tecnica': self.resultado.get('tecnica', 'anchura') if self.resultado else 'anchura'
+                    'tecnica': self.agente._tecnica  # Usar la técnica del agente directamente
                 }
-                
-                self.resultado = self.agente._preparar_resultado_parcial(camino_final)
-                self.resultado['camino_set'] = set(camino_final)
                 
                 print(f"✅ Búsqueda completada! Energía a gastar: {energia_gastada}")
                 
-                # Mensaje de éxito con opción
-                if energia_gastada <= self.energia_restante or self.bateria_infinita:
-                    self.voz.hablar(f"¡Encontré un camino! Gasta {energia_gastada} de batería. ¿Te gusta esta nave?")
-                    self.mostrar_boton_elegir = True
+                # ✅ SIEMPRE mostrar el botón, independientemente de la batería
+                self.voz.hablar(f"¡Encontré un camino! Gasta {energia_gastada} de batería. ¿Quieres intentarlo?")
+                self.mostrar_boton_elegir = True
                 
             elif estado == 'NO_ENCONTRADO':
                 self.busqueda_activa = False
