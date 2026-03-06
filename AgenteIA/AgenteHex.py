@@ -4,6 +4,7 @@
 # *              tablero hexagonal del juego.                *
 # *              Implementa BFS, DFS y Costo Uniforme        *
 # *              con trazabilidad para visualización.        *
+# *              AHORA EVITA OBSTÁCULOS Y OTROS PLANETAS     *
 # ************************************************************
 
 import time
@@ -20,6 +21,8 @@ class AgenteHex(Agente):
         'anchura'       →  BFS  – camino más corto en pasos
         'profundidad'   →  DFS  – exploración profunda
         'costouniforme' →  UCS  – camino de mínimo costo
+        
+    IMPORTANTE: No permite pasar por obstáculos ni por otros planetas
     """
 
     def __init__(self, tablero: TableroHexagonal):
@@ -30,6 +33,7 @@ class AgenteHex(Agente):
         self._inicio: tuple | None = None
         self._meta: tuple | None = None
         self._tecnica: str | None = None
+        self._meta_emocion: str | None = None
 
         # ── Resultados expuestos para visualización ──────────────────
         self.camino: list[tuple] = []          # camino final [inicio, ..., meta]
@@ -37,6 +41,9 @@ class AgenteHex(Agente):
         self.nivel_bfs: dict[tuple, int] = {}  # (q,r) → onda BFS
         self.costo_acumulado: dict[tuple, float] = {}  # (q,r) → costo UCS
         self.metricas: dict = {}
+        
+        # Variable interna para camino actual
+        self._camino_actual = []
 
     # ─────────────────────────────────────────────────────────────────
     # API pública
@@ -96,8 +103,26 @@ class AgenteHex(Agente):
 
     def _costo_celda(self, q: int, r: int) -> int:
         """Devuelve el costo de atravesar la celda (q, r)."""
-        celda = self.tablero.obtener_celda(q, r)
-        return celda.costo if celda else 1
+        if hasattr(self, '_meta_emocion'):
+            return self.tablero.obtener_costo_celda(q, r, self._meta_emocion)
+        return self.tablero.obtener_costo_celda(q, r, None)
+
+    def _es_transitable(self, q: int, r: int) -> bool:
+        """
+        Verifica si una celda es transitable para el camino final.
+        No se puede pasar por:
+        - Obstáculos (asteroides, tormentas, agujeros negros)
+        - Otros planetas (que no sean el destino)
+        """
+        return self.tablero.es_transitable(q, r, self._meta_emocion)
+
+    def _obtener_vecinos_validos(self, q: int, r: int) -> list[tuple[int, int]]:
+        """Obtiene solo los vecinos que son transitables."""
+        todos_vecinos = self.tablero.obtener_vecinos(q, r)
+        return [
+            vecino for vecino in todos_vecinos 
+            if self._es_transitable(vecino[0], vecino[1])
+        ]
 
     def _heuristica(self, q: int, r: int) -> int:
         """Distancia hexagonal desde (q,r) hasta la meta (útil para A*)."""
@@ -134,7 +159,8 @@ class AgenteHex(Agente):
                 })
                 return camino
 
-            for vecino in self.tablero.obtener_vecinos(*nodo):
+            # SOLO vecinos transitables
+            for vecino in self._obtener_vecinos_validos(*nodo):
                 if vecino not in visitados:
                     visitados.add(vecino)
                     self.nivel_bfs[vecino] = self.nivel_bfs[nodo] + 1
@@ -175,8 +201,9 @@ class AgenteHex(Agente):
                 })
                 return camino
 
-            # Invertir para explorar en orden natural (primer vecino primero)
-            for vecino in reversed(self.tablero.obtener_vecinos(*nodo)):
+            # SOLO vecinos transitables (en orden inverso)
+            vecinos_validos = self._obtener_vecinos_validos(*nodo)
+            for vecino in reversed(vecinos_validos):
                 if vecino not in visitados:
                     frontera.append(camino + [vecino])
 
@@ -219,7 +246,8 @@ class AgenteHex(Agente):
                 })
                 return camino
 
-            for vecino in self.tablero.obtener_vecinos(*nodo):
+            # SOLO vecinos transitables
+            for vecino in self._obtener_vecinos_validos(*nodo):
                 nuevo_costo = costo + self._costo_celda(*vecino)
                 if vecino not in visitados or visitados[vecino] > nuevo_costo:
                     contador += 1
@@ -232,11 +260,12 @@ class AgenteHex(Agente):
     # Búsqueda Paso a Paso
     # ─────────────────────────────────────────────────────────────────
 
-    def buscar_paso_a_paso(self, inicio: tuple, meta: tuple, tecnica: str):
+    def buscar_paso_a_paso(self, inicio: tuple, meta: tuple, tecnica: str, emocion_destino: str = None):
         """Versión paso a paso de la búsqueda."""
         self._inicio = inicio
         self._meta = meta
         self._tecnica = tecnica
+        self._meta_emocion = emocion_destino 
 
         # Resetear estado
         self.camino = []
@@ -275,11 +304,11 @@ class AgenteHex(Agente):
         }
 
     # ─────────────────────────────────────────────────────────────────
-    # BFS Paso a Paso (OPTIMIZADO)
+    # BFS Paso a Paso (OPTIMIZADO) - CON FILTRO DE OBSTÁCULOS
     # ─────────────────────────────────────────────────────────────────
 
     def _bfs_paso_a_paso(self):
-        """BFS paso a paso optimizado."""
+        """BFS paso a paso que evita obstáculos y otros planetas."""
         from collections import deque
 
         inicio, meta = self._inicio, self._meta
@@ -309,8 +338,8 @@ class AgenteHex(Agente):
                 yield 'ENCONTRADO', camino
                 return
             
-            # Añadir vecinos no visitados
-            for vecino in self.tablero.obtener_vecinos(*nodo):
+            # SOLO vecinos transitables
+            for vecino in self._obtener_vecinos_validos(*nodo):
                 if vecino not in visitados:
                     visitados.add(vecino)
                     self.nivel_bfs[vecino] = self.nivel_bfs[nodo] + 1
@@ -322,11 +351,11 @@ class AgenteHex(Agente):
         yield 'NO_ENCONTRADO', None
 
     # ─────────────────────────────────────────────────────────────────
-    # DFS Paso a Paso (OPTIMIZADO)
+    # DFS Paso a Paso (OPTIMIZADO) - CON FILTRO DE OBSTÁCULOS
     # ─────────────────────────────────────────────────────────────────
 
     def _dfs_paso_a_paso(self):
-        """DFS paso a paso optimizado."""
+        """DFS paso a paso que evita obstáculos y otros planetas."""
         inicio, meta = self._inicio, self._meta
 
         frontera = [[inicio]]
@@ -355,8 +384,9 @@ class AgenteHex(Agente):
                 yield 'ENCONTRADO', camino
                 return
             
-            # Añadir vecinos no visitados (en orden inverso)
-            for vecino in reversed(self.tablero.obtener_vecinos(*nodo)):
+            # SOLO vecinos transitables (en orden inverso)
+            vecinos_validos = self._obtener_vecinos_validos(*nodo)
+            for vecino in reversed(vecinos_validos):
                 if vecino not in visitados:
                     frontera.append(camino + [vecino])
             
@@ -365,11 +395,11 @@ class AgenteHex(Agente):
         yield 'NO_ENCONTRADO', None
 
     # ─────────────────────────────────────────────────────────────────
-    # UCS Paso a Paso (OPTIMIZADO)
+    # UCS Paso a Paso (OPTIMIZADO) - CON FILTRO DE OBSTÁCULOS
     # ─────────────────────────────────────────────────────────────────
 
     def _ucs_paso_a_paso(self):
-        """UCS paso a paso optimizado."""
+        """UCS paso a paso que evita obstáculos y otros planetas."""
         import heapq
         
         inicio, meta = self._inicio, self._meta
@@ -402,8 +432,8 @@ class AgenteHex(Agente):
                 yield 'ENCONTRADO', camino
                 return
             
-            # Añadir vecinos
-            for vecino in self.tablero.obtener_vecinos(*nodo):
+            # SOLO vecinos transitables
+            for vecino in self._obtener_vecinos_validos(*nodo):
                 nuevo_costo = costo + self._costo_celda(*vecino)
                 if vecino not in visitados or visitados[vecino] > nuevo_costo:
                     contador += 1
