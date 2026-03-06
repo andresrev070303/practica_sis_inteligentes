@@ -23,6 +23,8 @@ COLOR_UCS_LO    = (80,  40,    0)
 COLOR_UCS_HI    = (255, 160,   0)
 COLOR_GAME_OVER = (255,   0,   0, 200)
 COLOR_VICTORIA  = (0,   255,   0, 200)
+COLOR_ASTAR_LO = (0, 100, 100)    # Verde azulado oscuro
+COLOR_ASTAR_HI = (0, 255, 255)    # Cian brillante
 
 COLOR_EMOCIONES = {
     "tristeza": (0,   0, 255),
@@ -214,7 +216,6 @@ class UIRenderer:
         pygame.draw.polygon(self.pantalla, borde, pts, grosor)
 
     def _color_celda(self, q, r):
-        """Color de relleno de la celda según estado de búsqueda y obstáculos."""
         j   = self.juego
         pos = (q, r)
 
@@ -261,6 +262,11 @@ class UIRenderer:
             costos   = resultado_actual.get('costo_acumulado', {})
             costo_mx = max(costos.values(), default=1)
             return _lerp_color(COLOR_UCS_LO, COLOR_UCS_HI, costos.get(pos, 0) / max(costo_mx, 1))
+        elif tecnica == 'a_star':  # NUEVO
+            # Para A* usamos el costo acumulado + factor de heurística
+            costos = resultado_actual.get('costo_acumulado', {})
+            costo_mx = max(costos.values(), default=1)
+            return _lerp_color(COLOR_ASTAR_LO, COLOR_ASTAR_HI, costos.get(pos, 0) / max(costo_mx, 1))
 
         return COLOR_NORMAL
 
@@ -428,14 +434,15 @@ class UIRenderer:
         y_base   = ALTO - 80
         x_centro = ANCHO // 2
 
-        pygame.draw.rect(self.pantalla, (0, 0, 0, 180), (x_centro - 300, y_base, 600, 60))
-        pygame.draw.rect(self.pantalla, (100, 100, 100), (x_centro - 300, y_base, 600, 60), 2)
+        pygame.draw.rect(self.pantalla, (0, 0, 0, 180), (x_centro - 350, y_base, 700, 60))
+        pygame.draw.rect(self.pantalla, (100, 100, 100), (x_centro - 350, y_base, 700, 60), 2)
 
         titulo = self._fuente_md.render("🚀 PRUEBA NAVES:", True, (255, 255, 255))
         self.pantalla.blit(titulo, (x_centro - titulo.get_width() // 2, y_base - 25))
 
-        for i, (tecla, nombre, desc, color) in enumerate(j.opciones_busqueda):
-            x = x_centro - 200 + i * 200
+        # Distribuir 4 opciones equitativamente
+        for i, (tecla, sigla, nombre, color) in enumerate(j.opciones_busqueda):
+            x = x_centro - 300 + i * 150  # 150 píxeles entre cada una
             pygame.draw.circle(self.pantalla, color, (x, y_base + 30), 15)
             pygame.draw.circle(self.pantalla, (255, 255, 255), (x, y_base + 30), 15, 2)
             sf_tecla = self._fuente_md.render(f"[{tecla}]", True, (255, 255, 100))
